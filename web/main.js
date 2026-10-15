@@ -10,9 +10,10 @@ import './style.css'
 import { FRAGMENT_NAME, REMARK_STRINGIFY_OPTIONS } from '../shared/markdown-options.js'
 import { encodeAnchor } from '../shared/positions.js'
 import { bindingMapping, rangeOf, reviewPlugin } from './review-plugin.js'
-import { el, layoutMargin, renderMargin } from './margin.js'
+import { autosize, el, isCompact, layoutMargin, renderMargin } from './margin.js'
 import { TEXT_TYPE_ICON, TEXT_TYPE_KEY, textTypeMenu } from './block-type.js'
 import { gutterDragPlugin } from './gutter-drag.js'
+import { handleSelectPlugin } from './handle-select.js'
 
 const app = document.getElementById('app')
 const docId = /^\/doc\/([0-9a-f]{12})/.exec(location.pathname)?.[1]
@@ -155,6 +156,8 @@ async function openEditor(id) {
     },
     featureConfigs: {
       [Crepe.Feature.Placeholder]: { text: 'Start writing…', mode: 'doc' },
+      // Close to the text, so the gutter style.css keeps for it stays narrow.
+      [Crepe.Feature.BlockEdit]: { blockHandle: { getOffset: () => 6 } },
       // The text type picker leads the selection toolbar (its own group, so a divider follows it).
       // Comment sits straight after code and link (same group, no divider).
       [Crepe.Feature.Toolbar]: {
@@ -187,6 +190,7 @@ async function openEditor(id) {
     .use($prose(() => ySyncPlugin(fragment)))
     .use($prose(() => reviewPlugin(reviewCtx)))
     .use($prose(() => gutterDragPlugin()))
+    .use($prose(() => handleSelectPlugin()))
     // Selection changes (and focus) drive the Comment button and what Claude sees as "your selection".
     .use($prose(() => new Plugin({
       view: () => ({ update: (v, prev) => { if (!prev.selection.eq(v.state.selection)) { typeMenu.close(); hooks.selection() } } }),
@@ -232,7 +236,22 @@ async function openEditor(id) {
   }
   document.addEventListener('keydown', (e) => {
     if (e.ctrlKey && e.altKey && e.key.toLowerCase() === 'm') { e.preventDefault(); startComment() }
+    if (e.key === 'Escape' && active && isCompact(margin)) closeOverlay()
   })
+  // In a tight window the open panel is an overlay: tapping anywhere else closes it.
+  document.addEventListener('pointerdown', (e) => {
+    if (!active || !isCompact(margin)) return
+    if (e.target.closest?.('.margin, .reviewbar, [data-comment], [data-suggestion]')) return
+    closeOverlay()
+  })
+
+  /** Shrink the open panel back to its pin; a half-written comment stays in it, an empty one goes. */
+  function closeOverlay() {
+    if (active === 'composer' && !margin.querySelector('[data-key="composer"]')?.value.trim()) return actions.cancelComment()
+    active = null
+    render()
+    reviewCtx.requestRefresh?.()
+  }
 
   function startComment() {
     if (!view) return
@@ -249,7 +268,8 @@ async function openEditor(id) {
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, to)))
     render()
     reviewCtx.requestRefresh?.()
-    margin.querySelector('[data-key="composer"]')?.focus()
+    margin.querySelector('[data-key="composer"]')?.focus({ preventScroll: isCompact(margin) })
+    revealOverlay()
   }
 
   function saveComment(body) {
@@ -278,6 +298,7 @@ async function openEditor(id) {
     active = linkedComment(itemId) ?? itemId
     render()
     reviewCtx.requestRefresh?.()
+    if (isCompact(margin)) return revealOverlay()
     if (scrollText) {
       const item = suggestions.get(itemId) ?? comments.get(itemId)
       const range = item && view ? rangeOf(item, reviewCtx, view.state) : null
@@ -288,11 +309,35 @@ async function openEditor(id) {
     }
   }
 
+  /**
+   * In a tight window, scroll the least that shows the open overlay and the text
+   * it belongs to (the text wins if both don't fit), once it has slid into place.
+   */
+  function revealOverlay() {
+    if (!isCompact(margin)) return
+    setTimeout(() => {
+      const panel = margin.querySelector('.panel.is-active')
+      if (!panel) return
+      const box = panel.getBoundingClientRect()
+      const top = Math.min(box.top, ...[...marksOf(active)].map((node) => node.getBoundingClientRect().top))
+      const floor = window.innerHeight - 96 // clear of the review bar
+      const ceiling = document.querySelector('.topbar').offsetHeight + 8
+      let dy = Math.max(0, box.bottom - floor)
+      if (top - dy < ceiling) dy = top - ceiling
+      if (dy) window.scrollBy({ top: dy, behavior: 'smooth' })
+    }, 200)
+  }
+
+  /** An item's marked text in the page: a comment's own and that of the fixes inside it. */
+  function marksOf(itemId) {
+    if (itemId === 'composer') return editorHost.querySelectorAll('.cmd-comment-draft')
+    const ids = [itemId, ...fixesFor(itemId).map((s) => s.id)]
+    return editorHost.querySelectorAll(ids.map((i) => `[data-suggestion="${i}"], [data-comment="${i}"]`).join(', '))
+  }
+
   // A comment's panel lights up its text and the text of the fixes inside it.
   function setHot(itemId, on) {
-    const ids = [itemId, ...fixesFor(itemId).map((s) => s.id)]
-    const selector = ids.map((i) => `[data-suggestion="${i}"], [data-comment="${i}"]`).join(', ')
-    for (const node of editorHost.querySelectorAll(selector)) node.classList.toggle('is-hot', on)
+    for (const node of marksOf(itemId)) node.classList.toggle('is-hot', on)
   }
 
   // --- Rendering ----------------------------------------------------------
@@ -358,6 +403,13 @@ async function openEditor(id) {
       if (range) tops.set(pid, view.coordsAtPos(range.from).top - base - 8)
     }
     layoutMargin(margin, tops, active)
+    // In a tight window the open panel overlays the page: drop it below all of its text.
+    const open = active && isCompact(margin) ? margin.querySelector('.panel.is-active') : null
+    if (open) {
+      let bottom = -Infinity
+      for (const node of marksOf(active)) for (const rect of node.getClientRects()) bottom = Math.max(bottom, rect.bottom)
+      if (bottom > -Infinity) open.style.setProperty('--drop', `${bottom - base - parseFloat(open.style.top) + 6}px`)
+    }
   }
 
   /**
@@ -382,10 +434,6 @@ async function openEditor(id) {
   function jumpTo(ids) {
     const next = ids[(ids.indexOf(active) + 1) % ids.length]
     focusItem(next, true)
-    // Below 1100px the margin stacks under the page, away from the text.
-    if (matchMedia('(max-width: 1100px)').matches) {
-      margin.querySelector(`.panel[data-id="${next}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    }
   }
 
   function renderBar() {
@@ -474,7 +522,12 @@ async function openEditor(id) {
     const key = JSON.stringify(agentState())
     if (key !== lastAgent) { lastAgent = key; renderHeader(); renderBar() }
   })
-  window.addEventListener('resize', () => { relayout(); placeModeThumb() })
+  window.addEventListener('resize', () => {
+    // Panels change width with the window, so their fields rewrap.
+    for (const field of margin.querySelectorAll('.field')) autosize(field)
+    relayout()
+    placeModeThumb()
+  })
   document.fonts?.ready.then(() => { relayout(); placeModeThumb() })
   // Relative times ("2m") age.
   setInterval(scheduleRender, 60_000)

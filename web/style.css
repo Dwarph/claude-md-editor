@@ -124,17 +124,19 @@ button { font: inherit; color: inherit; }
 .segmented button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* ---- Workspace: document plus margin ---------------------------------- */
+/* As the window narrows the gutters, gap and margin give way before the page
+   does, so notes stay beside their text. When that gets tight the margin
+   shrinks to a rail of pins (see "Compact margin" below). The left gutter
+   always keeps room for the block handle (+ and drag): without it the handle
+   flips to the right of the text, over the margin. */
 .workspace {
-  display: grid; grid-template-columns: minmax(0, 680px) 300px; column-gap: 56px; justify-content: center;
-  padding: 44px 40px 160px;
+  --handle-gutter: 76px; /* two 32px buttons, their gap and the 6px offset set in main.js */
+  display: grid; grid-template-columns: minmax(0, 680px) clamp(220px, 26vw, 300px);
+  column-gap: clamp(20px, 4vw, 56px); justify-content: center;
+  padding: 44px clamp(16px, 3vw, 40px) 160px max(var(--handle-gutter), clamp(16px, 3vw, 40px));
 }
 .page { min-width: 0; }
 .margin { position: relative; }
-@media (max-width: 1100px) {
-  .workspace { grid-template-columns: minmax(0, 680px); }
-  .margin { display: flex; flex-direction: column; gap: 12px; margin-top: 32px; }
-  .margin .panel { position: static !important; }
-}
 
 /* Crepe theme, mapped onto our tokens */
 .milkdown {
@@ -213,6 +215,7 @@ button { font: inherit; color: inherit; }
   padding: 10px 8px 12px 14px; background: var(--panel); border-radius: 10px; box-shadow: var(--panel-shadow);
   font-size: 13px; line-height: 1.5; color: var(--text-2);
   transition: top 0.18s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  container-type: inline-size;
 }
 .panel:hover, .panel.is-active { box-shadow: var(--panel-shadow-hot); }
 .panel.is-active { transform: translateX(-4px); }
@@ -257,6 +260,41 @@ button { font: inherit; color: inherit; }
 .field::placeholder { color: var(--muted); }
 .panel-foot { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
 .panel-foot .hint { margin-left: auto; padding-right: 6px; font-size: 12px; color: var(--muted); }
+/* A narrow panel has no room for the shortcut beside the buttons. */
+@container (max-width: 270px) { .panel-foot .btn ~ .hint { display: none; } }
+
+/* ---- Compact margin: pins beside the text, the open one as an overlay -- */
+.pin { display: none; }
+@media (max-width: 720px) {
+  .workspace { --handle-gutter: 66px; grid-template-columns: minmax(0, 1fr) 28px; column-gap: 12px; padding-right: 16px; }
+  .milkdown .milkdown-block-handle .operation-item { width: 28px; height: 28px; padding: 3px; }
+  .milkdown .milkdown-block-handle .operation-item svg { width: 22px; height: 22px; }
+  .margin { --compact: 1; }
+  /* Panels sit 8px above their line so the heading meets the text; a pin centres on the line. */
+  .margin .panel:not(.is-active) { padding: 0; background: none; box-shadow: none; transform: translateY(8px); }
+  .margin .panel:not(.is-active) > :not(.pin) { display: none; }
+  .margin .panel:not(.is-active) > .pin { display: grid; }
+  /* Opens just under its text (--drop, set in main.js), spreading left over the page. */
+  .margin .panel.is-active {
+    left: auto; right: 0; z-index: 25; width: min(340px, calc(100vw - 32px));
+    transform: translateY(var(--drop, 40px)); box-shadow: var(--panel-shadow-hot), 0 0 0 1px var(--line);
+  }
+}
+.pin {
+  position: relative; width: 28px; height: 28px; place-items: center; padding: 0; border: 0; border-radius: 50%;
+  background: var(--panel); box-shadow: var(--panel-shadow); color: var(--text-2); cursor: pointer;
+}
+.pin svg { width: 15px; height: 15px; }
+.pin.comment { background: var(--marker); color: var(--text); box-shadow: none; }
+.pin.comment.draft { background: var(--marker-draft); }
+.pin.claude { color: var(--claude-text); }
+.pin:hover { box-shadow: var(--panel-shadow-hot); }
+.pin.comment:hover { background: var(--marker-hot); }
+.pin:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pin.has-reply::after {
+  content: ''; position: absolute; top: -1px; right: -1px; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--claude); box-shadow: 0 0 0 2px var(--bg);
+}
 
 .btn {
   min-height: 30px; padding: 0 12px; border: 0; border-radius: 7px; cursor: pointer;

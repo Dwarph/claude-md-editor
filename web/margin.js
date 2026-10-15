@@ -24,9 +24,14 @@ export const ICONS = {
   resolve: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="5.75"/><path d="M5.6 8.2l1.7 1.7 3.1-3.6"/></svg>',
   reopen: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8a5 5 0 1 0 1.5-3.6"/><path d="M3 2.75V5.5h2.75"/></svg>',
   comment: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z"/></svg>',
+  edit: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 3l2.5 2.5L6 12.5H3.5V10z"/><path d="M9 4.5l2.5 2.5"/></svg>',
 }
 
 const PANEL_GAP = 10
+const PIN_GAP = 6
+
+/** In a tight window the margin shrinks to a rail of pins; the active one opens as an overlay. */
+export const isCompact = (root) => getComputedStyle(root).getPropertyValue('--compact').trim() === '1'
 
 const glyph = (icon, label, onclick, cls = '') =>
   el('button', { type: 'button', class: `glyph ${cls}`, 'aria-label': label, title: label, onclick, html: ICONS[icon] })
@@ -167,7 +172,7 @@ function composerPanel(model) {
     oninput: model.relayout,
     onsubmit: (f) => actions.saveComment(f.value),
   })
-  return el('aside', { class: 'panel is-active', 'data-id': 'composer', 'aria-label': 'New comment' },
+  return el('aside', { class: 'panel', 'data-id': 'composer', 'aria-label': 'New comment' },
     el('div', { class: 'panel-head' }, el('span', { class: 'who' }, 'You'), el('span', { class: 'when' }, 'New comment')),
     field,
     el('div', { class: 'panel-foot' },
@@ -195,6 +200,25 @@ function preserveFields(root, draw) {
   }
 }
 
+/** The icon a panel shrinks to in a tight window; tapping it opens the panel. */
+function pin(item, model) {
+  const c = item.data
+  const [icon, label, cls] = item.type === 'composer' ? ['comment', 'New comment', 'comment draft']
+    : item.type === 'suggestion' ? ['edit', 'Suggestion from Claude', 'claude']
+      : c.status === 'draft' ? ['comment', 'Draft comment', 'comment draft']
+        : ['comment', 'Comment thread', 'comment']
+  // A dot when the next move on a comment is yours: Claude replied or proposed a fix.
+  const yours = item.type === 'comment' && (c.fixes?.length || c.thread?.at(-1)?.author === 'Claude')
+  return el('button', {
+    type: 'button',
+    class: `pin ${cls}${yours ? ' has-reply' : ''}`,
+    'aria-label': label,
+    title: label,
+    onclick: () => model.onFocus(item.id),
+    html: ICONS[icon],
+  })
+}
+
 /**
  * model: { items: [{ id, type: 'suggestion'|'comment'|'composer', data }], active, actions, relayout, onHover(id, on), onFocus(id) }
  */
@@ -204,6 +228,7 @@ export function renderMargin(root, model) {
       const panel = item.type === 'composer' ? composerPanel(model)
         : item.type === 'suggestion' ? suggestionPanel(item.data, model)
           : commentPanel(item.data, model)
+      panel.prepend(pin(item, model))
       if (item.id === model.active) panel.classList.add('is-active')
       panel.addEventListener('mouseenter', () => model.onHover(item.id, true))
       panel.addEventListener('mouseleave', () => model.onHover(item.id, false))
@@ -223,12 +248,16 @@ export function renderMargin(root, model) {
  */
 export function layoutMargin(root, tops, active) {
   const panels = [...root.querySelectorAll('.panel')]
-  if (getComputedStyle(panels[0] ?? root).position !== 'absolute') return // narrow layout: panels flow
-  const placed = panels.map((panel) => ({ panel, want: tops.get(panel.dataset.id), height: panel.offsetHeight }))
+  if (!panels.length) return
+  // Pins all take the same room; the open one floats over the page instead of pushing the rest.
+  const compact = isCompact(root)
+  const gap = compact ? PIN_GAP : PANEL_GAP
+  const pinHeight = compact ? root.querySelector('.panel:not(.is-active) .pin')?.offsetHeight || 28 : 0
+  const placed = panels.map((panel) => ({ panel, want: tops.get(panel.dataset.id), height: compact ? pinHeight : panel.offsetHeight }))
   let last = 0
   for (const p of placed) {
     if (p.want === undefined) p.want = last
-    last = Math.max(last, p.want + p.height + PANEL_GAP)
+    last = Math.max(last, p.want + p.height + gap)
   }
   placed.sort((a, b) => a.want - b.want)
   let pivot = placed.findIndex((p) => p.panel.dataset.id === active)
@@ -236,18 +265,18 @@ export function layoutMargin(root, tops, active) {
   placed[pivot].top = Math.max(0, placed[pivot].want)
   for (let i = pivot + 1; i < placed.length; i++) {
     const prev = placed[i - 1]
-    placed[i].top = Math.max(placed[i].want, prev.top + prev.height + PANEL_GAP)
+    placed[i].top = Math.max(placed[i].want, prev.top + prev.height + gap)
   }
   for (let i = pivot - 1; i >= 0; i--) {
     const next = placed[i + 1]
-    placed[i].top = Math.min(placed[i].want, next.top - placed[i].height - PANEL_GAP)
+    placed[i].top = Math.min(placed[i].want, next.top - placed[i].height - gap)
   }
   // Nothing may rise above the top of the margin: push down from there.
   const shift = Math.max(0, -Math.min(...placed.map((p) => p.top)))
   let bottom = 0
   for (const p of placed) {
     p.panel.style.top = `${p.top + shift}px`
-    bottom = Math.max(bottom, p.top + shift + p.height)
+    bottom = Math.max(bottom, p.top + shift + (compact ? p.panel.offsetHeight : p.height))
   }
   root.style.minHeight = `${bottom}px`
 }
