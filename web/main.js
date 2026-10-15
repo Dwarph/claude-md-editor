@@ -361,12 +361,14 @@ async function openEditor(id) {
   }
 
   /**
-   * Open comments by whose turn it is, each in document order: "you" once Claude
-   * has replied or proposed a fix, "claude" while the last word is yours.
+   * Open items by whose turn it is, each in document order: "you" for Claude's
+   * suggestions and for comments it has replied to or proposed a fix for,
+   * "claude" while the last word on a comment is yours.
    */
-  function commentGroups() {
+  function reviewGroups() {
     const groups = { you: [], claude: [], draft: [] }
     for (const item of marginItems()) {
+      if (item.type === 'suggestion') groups.you.push(item.id)
       if (item.type !== 'comment') continue
       const c = item.data
       if (c.status === 'draft') groups.draft.push(c.id)
@@ -376,7 +378,7 @@ async function openEditor(id) {
     return groups
   }
 
-  /** Step to the next comment in a group, wrapping after the last. */
+  /** Step to the next item in a group, wrapping after the last. */
   function jumpTo(ids) {
     const next = ids[(ids.indexOf(active) + 1) % ids.length]
     focusItem(next, true)
@@ -388,39 +390,33 @@ async function openEditor(id) {
 
   function renderBar() {
     const pending = suggestions.size
-    const loose = [...suggestions.keys()].filter((sid) => !linkedComment(sid)).length
-    const groups = commentGroups()
+    const { you, claude, draft } = reviewGroups()
     const listening = !!agentState()?.watching
-    bar.hidden = pending + groups.you.length + groups.claude.length + groups.draft.length === 0
-    const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+    bar.hidden = pending + you.length + claude.length + draft.length === 0
     const dot = (kind) => el('span', { class: `dot ${kind}`, 'aria-hidden': 'true' })
-    // "2 with you" reads "1 of 2 with you" while you step through them.
-    const stepper = (ids, label, extra) => {
-      const at = ids.indexOf(active)
-      return el('button', { type: 'button', class: `count${at >= 0 ? ' is-current' : ''}`, onclick: () => jumpTo(ids), ...extra },
-        ...label(at >= 0 && ids.length > 1 ? `${at + 1} of ${ids.length}` : String(ids.length)))
-    }
+    // "3 with you" reads "1 of 3 with you" while you step through them.
+    const at = you.indexOf(active)
     const counts = [
-      loose ? el('span', { class: 'count' }, plural(loose, 'suggestion')) : null,
-      groups.you.length ? stepper(groups.you, (n) => [dot('you'), `${n} with you`], { title: 'Claude replied or suggested a fix' }) : null,
-      groups.claude.length
-        ? el('span', { class: 'count', title: listening ? 'Claude is listening and will pick these up' : 'Claude isn’t listening: tell it “review’s in”' },
-          dot(listening ? 'claude' : 'idle'), `${groups.claude.length} with Claude`, listening ? null : ' · not listening')
+      you.length
+        ? el('button', { type: 'button', class: `count${at >= 0 ? ' is-current' : ''}`, title: 'Claude’s suggestions, replies and fixes', onclick: () => jumpTo(you) },
+          dot('you'), `${at >= 0 && you.length > 1 ? `${at + 1} of ${you.length}` : you.length} with you`)
         : null,
-      groups.draft.length
-        ? stepper(groups.draft, (n) => [`${n} draft${groups.draft.length === 1 ? '' : 's'}`], { title: 'Only you can see drafts until you submit' })
+      // Whether Claude is listening shows in the dot; the top bar says it in words.
+      claude.length
+        ? el('span', { class: 'count', title: listening ? 'Claude is listening and will pick these up' : 'Claude isn’t listening: tell it “review’s in”' },
+          dot(listening ? 'claude' : 'idle'), `${claude.length} with Claude`)
         : null,
     ].filter(Boolean)
     bar.replaceChildren(...[
       ...counts.flatMap((c, i) => (i ? [el('span', { class: 'sep', 'aria-hidden': 'true' }), c] : [c])),
       pending > 1 ? el('button', { type: 'button', onclick: acceptAll }, 'Accept all') : null,
-      groups.draft.length
+      draft.length
         ? el('button', {
           type: 'button',
           class: 'submit',
           title: listening ? 'Claude is listening and will pick these up straight away' : 'Claude isn’t listening: tell it “review’s in” after submitting',
           onclick: submitReview,
-        }, 'Submit review')
+        }, `Submit ${draft.length} comment${draft.length === 1 ? '' : 's'}`)
         : null,
     ].filter(Boolean))
   }
