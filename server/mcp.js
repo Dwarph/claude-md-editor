@@ -10,10 +10,13 @@ import { ENTRY, VERSION } from './paths.js'
 const CLI = ENTRY.cli
 
 const server = new McpServer(
-  { name: 'claude-md-editor', version: VERSION },
+  { name: 'md-editor', version: VERSION },
   {
     instructions:
       'Shared markdown editor: the person edits a rendered (WYSIWYG) view in their browser while you edit the same file live. ' +
+      'Use it by default whenever you draft or rework text longer than a sentence or two with the person (a project update, a paragraph, an email, a post, a doc), ' +
+      'even if they never mention the editor: put the draft in a markdown file and open it here instead of replying with it in chat. ' +
+      'Skip it for one-line answers, code, or when they ask for the text in chat. ' +
       'Never edit an open document with Edit/Write; use these tools so your changes arrive as suggestions the person accepts or rejects. ' +
       'Load the collab-md skill for the full workflow.',
   },
@@ -44,8 +47,10 @@ function openInSystemBrowser(url) {
 tool('open_document', {
   title: 'Open shared document',
   description:
-    'Open a markdown file in the shared editor and return its URL. Then show it to the person: open it in a browser pane you control, ' +
-    'or pass open_browser to open their default browser, and always give them the link. Then start the review watcher it returns ' +
+    'Open a markdown file in the shared editor and return its URL. Use it for any draft longer than a sentence or two that you write ' +
+    'with the person, not only when they ask for the editor. Then show it to the person: in a Claude app UI with a built-in browser pane, ' +
+    'open the URL there and bring that pane to the front; only without a pane of your own, pass open_browser to open their default browser. ' +
+    'Always give them the link as well. Then start the review watcher it returns ' +
     'as a background command if you can run one.',
   inputSchema: {
     path,

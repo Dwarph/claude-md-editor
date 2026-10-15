@@ -16,7 +16,7 @@ everything runs on `127.0.0.1`.
 
 Requires Node 20+ on the machine.
 
-**Cowork (or Claude Code), from the packaged file:** build `build/claude-md-editor.plugin` with
+**Cowork (or Claude Code), from the packaged file:** build `build/md-editor.plugin` with
 `npm run package:plugin` and add it to Cowork (drop it into a chat and accept it). The package
 holds the server as three bundled files, so it needs no install step or network access, and
 starts in about a second.
@@ -25,7 +25,7 @@ starts in about a second.
 
 ```
 /plugin marketplace add Dwarph/claude-md-editor
-/plugin install claude-md-editor@claude-md-editor
+/plugin install md-editor@claude-md-editor
 ```
 
 Installed this way it runs from source, and installs its dependencies (`npm ci`) on first start.
@@ -38,15 +38,17 @@ claude --plugin-dir /path/to/claude-md-editor
 ```
 
 **Where it works:** the editor opens in your browser and talks to a small server on your
-computer, so it works wherever Claude's tools run on your own machine. In the Claude Code
-desktop app it opens in the built-in browser; elsewhere, such as Cowork or a terminal, it opens
-your default browser. Where Claude can't run background commands (Cowork), it can't be woken
+computer, so it works wherever Claude's tools run on your own machine. In the Claude desktop
+app (the Code tab or Cowork) it opens in the built-in browser pane and brings it to the front;
+with no browser pane, such as in a terminal, it opens your default browser. Where Claude can't run background commands (Cowork), it can't be woken
 when you submit a review, so tell it "review's in".
 
 ## Use
 
 Ask Claude to open a file, for example *"let's work on docs/launch.md together in the editor"*.
-The `collab-md` skill takes it from there:
+You don't have to ask, though: whenever Claude writes something longer than a sentence or two
+with you (a project update, a paragraph, an email), it puts the draft in the editor by default
+instead of replying with it in chat. The `collab-md` skill takes it from there:
 
 - Claude opens the doc and shows you the editor (the built-in browser in the Claude desktop app,
   or a link elsewhere).
@@ -164,7 +166,7 @@ npm install
 npm run build        # bundles the editor into web/dist (committed, so installs need no build)
 npm test             # vitest: round-trips, suggestions, anchors, reviews, persistence
 npm run dev:web      # Vite dev server for the UI, proxied to a running daemon
-npm run package:plugin   # build/claude-md-editor.plugin: editor plus bundled server, for Cowork
+npm run package:plugin   # build/md-editor.plugin: editor plus bundled server, for Cowork
 node server/cli.js open some.md   # start the daemon and print a doc's URL
 node server/cli.js stop
 ```

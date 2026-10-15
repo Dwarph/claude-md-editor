@@ -5,7 +5,7 @@ import type { Engine } from 'claude-code/testing'
 import type { DocSummary } from '../types'
 
 const PLUGIN = 'md-editor-mod'
-const OPEN_TOOL = 'mcp__plugin_claude-md-editor_md-editor__open_document'
+const OPEN_TOOL = 'mcp__plugin_md-editor_md-editor__open_document'
 
 const draft = (over: Partial<DocSummary> = {}): DocSummary => ({
   id: 'abc123def456',

@@ -23,7 +23,7 @@ const notified = atom({ plugin: 'md-editor-mod', key: 'notified' } as const, {})
 const isPaneOffered = atom({ plugin: 'md-editor-mod', key: 'isPaneOffered' } as const, false)
 
 const WATCHER_NOTE =
-  'The claude-md-editor mod is loaded in this session: it tells you as soon as the person submits a review, ' +
+  'The md-editor mod is loaded in this session: it tells you as soon as the person submits a review, ' +
   'so do not start the reviewWatcher background command.'
 
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err))
@@ -75,7 +75,7 @@ async function openDocument($: Engine, path: string): Promise<DocSummary> {
   }
   const cli = resolvePath($.plugin.root, '../server/cli.js')
   if (!(await $.fs.exists(cli))) {
-    throw new Error('the editor isn\'t running. Ask Claude to open the file (the claude-md-editor plugin starts it).')
+    throw new Error('the editor isn\'t running. Ask Claude to open the file (the md-editor plugin starts it).')
   }
   const ran = await $.process.run(['node', cli, 'open', path], { timeoutMs: 60_000 })
   if (ran.exitCode !== 0) throw new Error(ran.stderr.trim() || `cli.js exited ${ran.exitCode}`)

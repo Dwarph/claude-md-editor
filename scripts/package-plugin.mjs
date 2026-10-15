@@ -1,4 +1,4 @@
-// Builds build/claude-md-editor.plugin: the plugin as one zip that Cowork (or
+// Builds build/md-editor.plugin: the plugin as one zip that Cowork (or
 // Claude Code) installs as-is. The server goes in as single-file bundles
 // (dist-server/), so there's no node_modules, no install step and no network
 // access on first run, and a fresh install starts quickly.

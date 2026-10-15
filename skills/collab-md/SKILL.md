@@ -1,6 +1,6 @@
 ---
 name: collab-md
-description: Work on a markdown document together with the person in a shared, live WYSIWYG editor. They edit the rendered doc in their browser; your edits arrive as highlighted suggestions they accept or reject, and they can select text and send you code-review style comments. Use whenever the person wants to write, draft, edit, review or iterate on a markdown file (docs, specs, posts, notes, READMEs) with you, or wants to co-edit text from the chat ("I want to edit this", "let's work on it together", "as a markdown file"), says "let's work on this doc together", "open it in the editor", "I'll edit it too", "review my comments", or "review's in", or mentions the shared/markdown editor. Prefer this over editing the file with Edit/Write whenever the person is also editing it.
+description: The default place to write any prose with the person. A shared, live WYSIWYG markdown editor they edit in their browser while your changes arrive as suggestions they accept or reject, and they select text to send you code-review style comments. Use it by default whenever you draft, rewrite or iterate on text longer than a sentence or two with them (a project or status update, a paragraph, an email, a Slack post, an announcement, a spec, notes, a README), even if they never mention markdown, a file or the editor. Also use it when they say "let's work on this together", "open it in the editor", "I'll edit it too", "review my comments" or "review's in". Skip it only for one-line answers, code, or when they ask for the text in chat. Prefer this over Edit/Write whenever they're also editing the file.
 ---
 
 # Collaborating in the shared markdown editor
@@ -11,6 +11,19 @@ text, as clean markdown.
 
 **Never use Edit/Write on a file that is open in the editor.** Your change would land as a raw
 disk edit, skip review, and fight their cursor. Use the tools below.
+
+## When to use it
+
+This is the default for any writing you do with the person, not something they have to ask for.
+If the text is longer than a sentence or two (a project update, a paragraph, an email, a Slack
+post, a check-in, a doc), put it in the editor instead of replying with it in chat, even when
+they only asked you to "write" or "draft" something.
+
+- Skip it for one-line answers, code, or when they ask for the text in chat.
+- Another skill shapes the words (a voice or house-style skill, a check-in template)? Follow it
+  for the writing, then put the result in the editor.
+- Once the text is in the editor, keep the chat short: the link and a line on what you wrote.
+  Don't paste the whole draft into chat as well.
 
 ## Start
 
@@ -27,14 +40,17 @@ disk edit, skip review, and fight their cursor. Use the tools below.
      offer to create a copy in a folder they name. Never pass `create: true` to work around a
      missing file.
 3. Show them the editor, and always give them the link as well:
-   - With a browser pane of your own (the Claude Code desktop app's built-in browser), open
-     `url` there (`preview_start` with `url`).
-   - Otherwise (Cowork, a terminal, an IDE) pass `open_browser: true` to `open_document`, so it
-     opens in their default browser.
+   - In a Claude app UI with a built-in browser pane (the Code tab or Cowork in the Claude
+     desktop app; its tools are named like `mcp__Claude_Browser__*`), always open `url` there,
+     not in their default browser: `preview_start` with `url`. Then make sure the pane is in
+     front, so they see the editor without looking for it. If the pane is hidden or another tab
+     is in front, bring the editor's tab forward (`tabs_select`).
+   - Only with no browser pane of your own (a terminal, an IDE) pass `open_browser: true` to
+     `open_document`, so it opens in their default browser.
 4. If you can run background shell commands on their machine (Claude Code), run
    `reviewWatcher` as a **background** Bash command (`run_in_background: true`). It exits the
    moment they click **Submit review**, which wakes you up. Skip it if you've been told the
-   claude-md-editor mod is loaded (it tells you about reviews itself), or if you can't run
+   md-editor mod is loaded (it tells you about reviews itself), or if you can't run
    background commands or the command fails, as in Cowork. In that case, tell them once:
    "When you've submitted your review, tell me 'review's in'."
 
