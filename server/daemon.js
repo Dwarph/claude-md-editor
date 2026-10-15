@@ -235,8 +235,9 @@ function waitForReview(session, res, timeoutMs) {
 }
 
 function reviewNotice(session, reviews) {
-  const comments = reviews.reduce((n, r) => n + r.commentIds.length, 0)
-  return { path: session.path, name: session.name, reviews: reviews.length, comments }
+  const replies = reviews.filter((r) => r.replyTo).length
+  const comments = reviews.reduce((n, r) => n + (r.replyTo ? 0 : r.commentIds.length), 0)
+  return { path: session.path, name: session.name, reviews: reviews.length, comments, replies }
 }
 
 // --- Lifecycle -----------------------------------------------------------

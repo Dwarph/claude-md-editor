@@ -11,6 +11,8 @@ import { FRAGMENT_NAME, REMARK_STRINGIFY_OPTIONS } from '../shared/markdown-opti
 import { encodeAnchor } from '../shared/positions.js'
 import { bindingMapping, rangeOf, reviewPlugin } from './review-plugin.js'
 import { el, layoutMargin, renderMargin } from './margin.js'
+import { TEXT_TYPE_ICON, TEXT_TYPE_KEY, textTypeMenu } from './block-type.js'
+import { gutterDragPlugin } from './gutter-drag.js'
 
 const app = document.getElementById('app')
 const docId = /^\/doc\/([0-9a-f]{12})/.exec(location.pathname)?.[1]
@@ -95,7 +97,8 @@ async function openEditor(id) {
 
   // --- Layout -------------------------------------------------------------
   const status = el('span', { class: 'doc-status' }, 'Connecting…')
-  const avatar = el('span', { class: 'avatar', 'aria-hidden': 'true' }, 'C')
+  // Claude's name in its orange; it pulses while Claude works and gets a green dot while it listens.
+  const claudeName = el('span', { class: 'claude-name' }, 'Claude')
   // The white pill behind the chosen mode; it slides between options.
   const modeThumb = el('span', { class: 'segmented-thumb', 'aria-hidden': 'true' })
   const modeButtons = MODES.map((m) =>
@@ -108,8 +111,7 @@ async function openEditor(id) {
     el('header', { class: 'topbar' },
       el('div', { class: 'doc-title' }, el('strong', { title: info.path }, info.name), status),
       el('div', { class: 'claude-can' },
-        avatar,
-        el('span', { id: 'claude-can-label' }, 'Claude can'),
+        el('span', { id: 'claude-can-label' }, claudeName, ' can'),
         el('div', { class: 'segmented', role: 'radiogroup', 'aria-labelledby': 'claude-can-label' }, modeThumb, modeButtons))),
     el('div', { class: 'workspace' }, el('div', { class: 'page' }, editorHost), margin),
     bar,
@@ -124,6 +126,7 @@ async function openEditor(id) {
   let active = null // id of the focused panel
   let draftAnchor = null // { from, to, quote } while composing a comment
   const hooks = { selection: () => {} }
+  const typeMenu = textTypeMenu(() => view)
 
   const reviewCtx = {
     ydoc,
@@ -152,9 +155,22 @@ async function openEditor(id) {
     },
     featureConfigs: {
       [Crepe.Feature.Placeholder]: { text: 'Start writing…', mode: 'doc' },
-      // Comment sits in the selection toolbar, straight after code and link (same group, no divider).
+      // The text type picker leads the selection toolbar (its own group, so a divider follows it).
+      // Comment sits straight after code and link (same group, no divider).
       [Crepe.Feature.Toolbar]: {
         buildToolbar: (builder) => {
+          const groups = builder.build().map((g) => ({ ...g, items: [...g.items] }))
+          builder.clear()
+          builder.addGroup('block', 'Text type').addItem(TEXT_TYPE_KEY, {
+            icon: TEXT_TYPE_ICON,
+            label: 'Text type',
+            active: () => false,
+            onRun: () => typeMenu.toggle(),
+          })
+          for (const { key, label, items } of groups) {
+            const group = builder.addGroup(key, label)
+            for (const { key: itemKey, ...item } of items) group.addItem(itemKey, item)
+          }
           builder.getGroup('function').addItem('comment', {
             icon: COMMENT_ICON,
             label: 'Comment',
@@ -170,9 +186,10 @@ async function openEditor(id) {
     .config((ctx) => ctx.update(remarkStringifyOptionsCtx, (prev) => ({ ...prev, ...REMARK_STRINGIFY_OPTIONS })))
     .use($prose(() => ySyncPlugin(fragment)))
     .use($prose(() => reviewPlugin(reviewCtx)))
+    .use($prose(() => gutterDragPlugin()))
     // Selection changes (and focus) drive the Comment button and what Claude sees as "your selection".
     .use($prose(() => new Plugin({
-      view: () => ({ update: (v, prev) => { if (!prev.selection.eq(v.state.selection)) hooks.selection() } }),
+      view: () => ({ update: (v, prev) => { if (!prev.selection.eq(v.state.selection)) { typeMenu.close(); hooks.selection() } } }),
       props: { handleDOMEvents: { focus: () => { hooks.selection(); return false }, blur: () => { setTimeout(hooks.selection, 150); return false } } },
     })))
   await crepe.create()
@@ -250,8 +267,15 @@ async function openEditor(id) {
     if (c) comments.set(cid, { ...c, ...patch })
   }
 
+  /** The open comment a suggestion resolves, if any: the suggestion is shown in that comment's panel. */
+  function linkedComment(sid) {
+    const target = suggestions.get(sid)?.resolves
+    return target && comments.has(target) && comments.get(target).status !== 'resolved' ? target : null
+  }
+  const fixesFor = (cid) => [...suggestions.values()].filter((s) => linkedComment(s.id) === cid)
+
   function focusItem(itemId, scrollText) {
-    active = itemId
+    active = linkedComment(itemId) ?? itemId
     render()
     reviewCtx.requestRefresh?.()
     if (scrollText) {
@@ -264,10 +288,11 @@ async function openEditor(id) {
     }
   }
 
+  // A comment's panel lights up its text and the text of the fixes inside it.
   function setHot(itemId, on) {
-    for (const node of editorHost.querySelectorAll(`[data-suggestion="${itemId}"], [data-comment="${itemId}"]`)) {
-      node.classList.toggle('is-hot', on)
-    }
+    const ids = [itemId, ...fixesFor(itemId).map((s) => s.id)]
+    const selector = ids.map((i) => `[data-suggestion="${i}"], [data-comment="${i}"]`).join(', ')
+    for (const node of editorHost.querySelectorAll(selector)) node.classList.toggle('is-hot', on)
   }
 
   // --- Rendering ----------------------------------------------------------
@@ -291,9 +316,9 @@ async function openEditor(id) {
       status.textContent = 'Saved'
       status.dataset.state = ''
     }
-    avatar.dataset.working = String(!!working)
-    avatar.dataset.listening = String(!!agent?.watching)
-    avatar.title = agent?.watching ? 'Claude is listening for your review' : 'Claude'
+    claudeName.dataset.working = String(!!working)
+    claudeName.dataset.listening = String(!!agent?.watching)
+    claudeName.title = agent?.watching ? 'Claude is listening for your review' : ''
     const mode = currentMode()
     for (const button of modeButtons) button.setAttribute('aria-checked', String(button.dataset.mode === mode))
     placeModeThumb()
@@ -310,15 +335,15 @@ async function openEditor(id) {
 
   /** Items in document order, so panels stack the way the text reads. */
   function marginItems() {
+    const pos = (data) => (view ? rangeOf(data, reviewCtx, view.state)?.from ?? Infinity : 0)
+    const withAnchor = (s) => ({ ...s, anchorLost: pos(s) === Infinity })
     const items = []
-    for (const s of suggestions.values()) items.push({ id: s.id, type: 'suggestion', data: s })
-    for (const c of comments.values()) if (c.status !== 'resolved') items.push({ id: c.id, type: 'comment', data: c })
-    if (draftAnchor) items.push({ id: 'composer', type: 'composer', data: draftAnchor })
-    const pos = (item) => (view ? rangeOf(item.data, reviewCtx, view.state)?.from ?? Infinity : 0)
-    for (const item of items) {
-      item.pos = pos(item)
-      if (item.type === 'suggestion') item.data = { ...item.data, anchorLost: item.pos === Infinity }
+    for (const s of suggestions.values()) if (!linkedComment(s.id)) items.push({ id: s.id, type: 'suggestion', data: withAnchor(s) })
+    for (const c of comments.values()) {
+      if (c.status !== 'resolved') items.push({ id: c.id, type: 'comment', data: { ...c, fixes: fixesFor(c.id).map(withAnchor) } })
     }
+    if (draftAnchor) items.push({ id: 'composer', type: 'composer', data: draftAnchor })
+    for (const item of items) item.pos = pos(item.data)
     return items.sort((a, b) => a.pos - b.pos)
   }
 
@@ -335,24 +360,67 @@ async function openEditor(id) {
     layoutMargin(margin, tops, active)
   }
 
+  /**
+   * Open comments by whose turn it is, each in document order: "you" once Claude
+   * has replied or proposed a fix, "claude" while the last word is yours.
+   */
+  function commentGroups() {
+    const groups = { you: [], claude: [], draft: [] }
+    for (const item of marginItems()) {
+      if (item.type !== 'comment') continue
+      const c = item.data
+      if (c.status === 'draft') groups.draft.push(c.id)
+      else if (c.fixes.length || c.thread?.at(-1)?.author === 'Claude') groups.you.push(c.id)
+      else groups.claude.push(c.id)
+    }
+    return groups
+  }
+
+  /** Step to the next comment in a group, wrapping after the last. */
+  function jumpTo(ids) {
+    const next = ids[(ids.indexOf(active) + 1) % ids.length]
+    focusItem(next, true)
+    // Below 1100px the margin stacks under the page, away from the text.
+    if (matchMedia('(max-width: 1100px)').matches) {
+      margin.querySelector(`.panel[data-id="${next}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }
+
   function renderBar() {
     const pending = suggestions.size
-    const drafts = [...comments.values()].filter((c) => c.status === 'draft').length
-    const open = [...comments.values()].filter((c) => c.status === 'submitted').length
+    const loose = [...suggestions.keys()].filter((sid) => !linkedComment(sid)).length
+    const groups = commentGroups()
     const listening = !!agentState()?.watching
-    bar.hidden = pending + drafts + open === 0
+    bar.hidden = pending + groups.you.length + groups.claude.length + groups.draft.length === 0
     const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+    const dot = (kind) => el('span', { class: `dot ${kind}`, 'aria-hidden': 'true' })
+    // "2 with you" reads "1 of 2 with you" while you step through them.
+    const stepper = (ids, label, extra) => {
+      const at = ids.indexOf(active)
+      return el('button', { type: 'button', class: `count${at >= 0 ? ' is-current' : ''}`, onclick: () => jumpTo(ids), ...extra },
+        ...label(at >= 0 && ids.length > 1 ? `${at + 1} of ${ids.length}` : String(ids.length)))
+    }
+    const counts = [
+      loose ? el('span', { class: 'count' }, plural(loose, 'suggestion')) : null,
+      groups.you.length ? stepper(groups.you, (n) => [dot('you'), `${n} with you`], { title: 'Claude replied or suggested a fix' }) : null,
+      groups.claude.length
+        ? el('span', { class: 'count', title: listening ? 'Claude is listening and will pick these up' : 'Claude isn’t listening: tell it “review’s in”' },
+          dot(listening ? 'claude' : 'idle'), `${groups.claude.length} with Claude`, listening ? null : ' · not listening')
+        : null,
+      groups.draft.length
+        ? stepper(groups.draft, (n) => [`${n} draft${groups.draft.length === 1 ? '' : 's'}`], { title: 'Only you can see drafts until you submit' })
+        : null,
+    ].filter(Boolean)
     bar.replaceChildren(...[
-      pending ? el('span', { class: 'count' }, plural(pending, 'suggestion')) : null,
-      drafts + open ? el('span', { class: 'count' }, plural(drafts + open, 'comment')) : null,
+      ...counts.flatMap((c, i) => (i ? [el('span', { class: 'sep', 'aria-hidden': 'true' }), c] : [c])),
       pending > 1 ? el('button', { type: 'button', onclick: acceptAll }, 'Accept all') : null,
-      drafts
+      groups.draft.length
         ? el('button', {
           type: 'button',
           class: 'submit',
           title: listening ? 'Claude is listening and will pick these up straight away' : 'Claude isn’t listening: tell it “review’s in” after submitting',
           onclick: submitReview,
-        }, drafts > 1 ? `Submit review (${drafts})` : 'Submit review')
+        }, 'Submit review')
         : null,
     ].filter(Boolean))
   }
@@ -374,7 +442,10 @@ async function openEditor(id) {
     cancelComment: () => { draftAnchor = null; active = null; render(); reviewCtx.requestRefresh?.() },
     editComment: (cid, body) => updateComment(cid, { body }),
     deleteComment: (cid) => comments.delete(cid),
-    reply: (cid, body) => api('reply', { id: cid, body }),
+    reply: async (cid, body) => {
+      await api('reply', { id: cid, body })
+      if (!agentState()?.watching) toast('Reply sent. Claude isn’t listening: tell it “review’s in” to pick it up.')
+    },
     resolve: (cid) => api('resolve', { id: cid }),
     reopen: (cid) => updateComment(cid, { status: 'submitted' }),
   }

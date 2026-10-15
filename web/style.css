@@ -20,7 +20,7 @@
   --panel-shadow-hot: 0 1px 2px rgba(20, 20, 18, 0.08), 0 8px 22px rgba(20, 20, 18, 0.09);
   --field: #f3f3f0;
   --accent: #1f4fbf; /* focus rings and selection, never text changes */
-  --claude: #d97757; /* Claude's brand orange: avatar */
+  --claude: #d97757; /* Claude's brand orange */
   --claude-text: #b4532f; /* the same orange, deep enough to read as 13px text */
   --ins-bg: rgba(34, 139, 84, 0.13);
   --ins-bg-hot: rgba(34, 139, 84, 0.24);
@@ -99,14 +99,11 @@ button { font: inherit; color: inherit; }
 .doc-status[data-state='offline'] { color: var(--danger); }
 
 .claude-can { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-2); }
-.avatar {
-  position: relative; width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
-  display: grid; place-items: center; background: var(--claude); color: #fff; font-size: 11px; font-weight: 600;
-}
-.avatar[data-working='true'] { animation: breathe 1.6s ease-in-out infinite; }
-.avatar[data-listening='true']::after {
-  content: ''; position: absolute; right: -2px; bottom: -2px; width: 8px; height: 8px; border-radius: 50%;
-  background: #2f9e64; box-shadow: 0 0 0 2px var(--bg);
+.claude-name { font-weight: 600; color: var(--claude-text); }
+.claude-name[data-working='true'] { animation: breathe 1.6s ease-in-out infinite; }
+.claude-name[data-listening='true']::after {
+  content: ''; display: inline-block; width: 7px; height: 7px; margin: 0 1px 1px 5px; border-radius: 50%;
+  background: #2f9e64; vertical-align: middle;
 }
 @keyframes breathe { 50% { opacity: 0.55; } }
 
@@ -226,9 +223,21 @@ button { font: inherit; color: inherit; }
 .panel-head .actions { margin-left: auto; display: flex; gap: 2px; }
 .panel p { margin: 0; padding-right: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .panel .meta { color: var(--muted); }
+.panel code { padding: 1px 4px; border-radius: 4px; background: var(--field); font: 12px/1.4 var(--mono); }
+.panel a { color: var(--accent); text-underline-offset: 2px; }
 .thread { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; padding-right: 6px; }
 .thread .who { display: block; font-weight: 600; color: var(--text); }
 .thread .who.claude { color: var(--claude-text); }
+
+/* A suggestion that resolves the comment, shown inside the comment's panel. */
+.fix { margin: 10px 6px 0 0; padding: 2px 2px 8px 10px; border-radius: 8px; background: var(--ins-bg); }
+.fix-head { display: flex; align-items: center; gap: 8px; min-height: 30px; }
+.fix-head .who { font-weight: 600; }
+.fix-head .when { color: var(--ins-text); }
+.fix-head .actions { margin-left: auto; display: flex; gap: 2px; }
+.fix p { padding-right: 8px; color: var(--text); }
+.fix .glyph:hover { background: var(--panel); }
+.fix .glyph.accept:hover { background: var(--panel); color: var(--ins-text); }
 
 .glyph {
   width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 50%;
@@ -261,18 +270,25 @@ button { font: inherit; color: inherit; }
 /* ---- Floating review bar ---------------------------------------------- */
 .reviewbar {
   position: fixed; left: 50%; bottom: 28px; z-index: 30; transform: translateX(-50%);
-  display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 6px 6px 6px 16px;
+  /* Without this the bar can only use the half of the window right of centre, so it wraps early. */
+  width: max-content; max-width: calc(100vw - 32px);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 6px;
   background: var(--bar); color: var(--bar-text); border-radius: 12px; font-size: 13px;
   box-shadow: 0 10px 30px rgba(20, 20, 18, 0.18);
 }
 .reviewbar[hidden] { display: none; }
-.reviewbar .count { padding: 0 10px 0 0; white-space: nowrap; }
-.reviewbar .count + .count { padding-left: 10px; border-left: 1px solid var(--bar-line); }
+/* Counts you can step through are buttons; "with Claude" is plain text, since there's nothing for you to do there. */
+.reviewbar .count { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 12px; white-space: nowrap; }
+.reviewbar .sep { width: 1px; height: 18px; background: var(--bar-line); }
+.reviewbar .dot { width: 7px; height: 7px; border-radius: 50%; }
+.reviewbar .dot.you { background: var(--claude); }
+.reviewbar .dot.claude { background: #2f9e64; }
+.reviewbar .dot.idle { box-sizing: border-box; border: 1.5px solid currentColor; }
 .reviewbar button {
   min-height: 34px; padding: 0 12px; border: 0; border-radius: 8px; cursor: pointer;
   background: transparent; color: var(--bar-text); font-size: 13px; font-weight: 500;
 }
-.reviewbar button:hover { background: color-mix(in srgb, var(--bar-text) 12%, transparent); }
+.reviewbar button:hover, .reviewbar button.is-current { background: color-mix(in srgb, var(--bar-text) 12%, transparent); }
 .reviewbar button.submit { background: var(--bg); color: var(--text); padding: 0 14px; }
 .reviewbar button.submit:hover { background: var(--bg); opacity: 0.9; }
 .reviewbar button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -282,6 +298,26 @@ button { font: inherit; color: inherit; }
   max-width: min(520px, calc(100vw - 32px)); padding: 10px 14px; border-radius: 10px;
   background: var(--panel); color: var(--text); box-shadow: var(--panel-shadow-hot); font-size: 13px;
 }
+
+/* ---- Text type menu (from the selection toolbar) ---------------------- */
+.type-menu {
+  position: absolute; z-index: 50; display: flex; flex-direction: column; min-width: 180px; padding: 4px;
+  background: var(--panel); border-radius: 10px; box-shadow: var(--panel-shadow-hot); font-family: var(--sans);
+}
+.type-menu button {
+  display: flex; align-items: center; min-height: 32px; padding: 0 10px 0 28px; border: 0; border-radius: 7px;
+  background: transparent; color: var(--text-2); font-size: 13px; text-align: left; cursor: pointer; position: relative;
+}
+.type-menu button:hover { background: var(--control); color: var(--text); }
+.type-menu button[aria-checked='true'] { color: var(--text); font-weight: 600; }
+.type-menu button[aria-checked='true']::before {
+  content: ''; position: absolute; left: 11px; top: 50%; width: 8px; height: 4px; margin-top: -4px;
+  border: solid currentColor; border-width: 0 0 1.5px 1.5px; transform: rotate(-45deg);
+}
+.type-menu .type-h1 { font: 600 17px var(--serif); }
+.type-menu .type-h2 { font: 600 15px var(--serif); }
+.type-menu .type-h3 { font: 600 14px var(--serif); }
+.type-menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 /* ---- Document list ---------------------------------------------------- */
 .doc-list { max-width: 680px; margin: 72px auto; padding: 0 24px; }

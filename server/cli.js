@@ -19,8 +19,13 @@ async function waitReview(path) {
       const notice = await api(`docs/${id}/wait-review`, {}, { method: 'GET' })
       failures = 0
       if (notice) {
-        const comments = notice.comments === 1 ? '1 comment' : `${notice.comments} comments`
-        console.log(`Review submitted on ${name}: ${comments}. Call get_review for "${path}", address each comment, then restart this watcher.`)
+        const count = (n, one, many) => `${n} ${n === 1 ? one : many}`
+        const what = [
+          notice.comments ? count(notice.comments, 'comment', 'comments') : null,
+          notice.replies ? count(notice.replies, 'reply', 'replies') : null,
+        ].filter(Boolean).join(', ')
+        const title = notice.comments || !notice.replies ? 'Review submitted' : 'New reply'
+        console.log(`${title} on ${name}: ${what || '0 comments'}. Call get_review for "${path}", address each comment, then restart this watcher.`)
         return
       }
     } catch (err) {

@@ -66,7 +66,7 @@ instead of replying with it in chat. The `collab-md` skill takes it from there:
   in the thread, or suggests a fix that resolves the comment when you accept it.
 - **Review bar:** the bar at the bottom counts what's pending and holds **Accept all** and
   **Submit review**.
-- **Notify:** a green dot on Claude's avatar means Claude is listening, through its review
+- **Notify:** a green dot beside Claude's name in the top bar means Claude is listening, through its review
   watcher, `wait_for_review` or the [mod](#claude-code-mod). Submitting then wakes Claude automatically. If it
   isn't listening, tell Claude "review's in".
 

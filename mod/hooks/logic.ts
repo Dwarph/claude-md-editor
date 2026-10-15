@@ -72,6 +72,8 @@ export function planNotices(
   return { notices, notified: next }
 }
 
-export function noticeText(doc: DocSummary, comments: number): string {
-  return `Review submitted on ${doc.name}: ${plural(comments, 'comment')}. Use the collab-md skill: call get_review for ${doc.path}.`
+export function noticeText(doc: DocSummary, comments: number, replies = 0): string {
+  const what = [comments || !replies ? plural(comments, 'comment') : null, replies ? `${replies} ${replies === 1 ? 'reply' : 'replies'}` : null]
+  const title = comments || !replies ? 'Review submitted' : 'New reply'
+  return `${title} on ${doc.name}: ${what.filter(Boolean).join(', ')}. Use the collab-md skill: call get_review for ${doc.path}.`
 }

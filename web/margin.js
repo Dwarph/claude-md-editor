@@ -44,6 +44,28 @@ const clip = (text, max = 48) => {
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat
 }
 
+// Inline markdown in comments, replies and notes: `code`, **bold**, *italic*,
+// ~~strikethrough~~, [links](https://…) and \-escapes. Built as DOM nodes, never HTML.
+const INLINE = /\\([\\`*_~[\]()])|`([^`\n]+)`|\*\*(?=\S)([\s\S]*?\S)\*\*|__(?=\S)([\s\S]*?\S)__(?!\w)|~~(?=\S)([\s\S]*?\S)~~|\*(?=[^\s*])([\s\S]*?[^\s*])\*|(?<!\w)_(?=[^\s_])([\s\S]*?[^\s_])_(?!\w)|\[([^\]\n]+)\]\(((?:https?:|mailto:)[^\s)]+)\)/g
+
+export function inlineMarkdown(text) {
+  const out = []
+  let last = 0
+  for (const m of (text ?? '').matchAll(INLINE)) {
+    if (m.index > last) out.push(text.slice(last, m.index))
+    const [, escaped, code, bold, bold2, strike, em, em2, linkText, href] = m
+    if (escaped !== undefined) out.push(escaped)
+    else if (code !== undefined) out.push(el('code', {}, code))
+    else if ((bold ?? bold2) !== undefined) out.push(el('strong', {}, inlineMarkdown(bold ?? bold2)))
+    else if (strike !== undefined) out.push(el('s', {}, inlineMarkdown(strike)))
+    else if ((em ?? em2) !== undefined) out.push(el('em', {}, inlineMarkdown(em ?? em2)))
+    else out.push(el('a', { href, target: '_blank', rel: 'noopener noreferrer' }, inlineMarkdown(linkText)))
+    last = m.index + m[0].length
+  }
+  if (last < (text ?? '').length) out.push(text.slice(last))
+  return out
+}
+
 function describe(s) {
   const before = s.original?.trim()
   const after = s.markdown?.trim()
@@ -80,7 +102,20 @@ function suggestionPanel(s, model) {
       el('span', { class: 'actions' },
         s.anchorLost ? null : glyph('check', 'Accept suggestion', () => actions.accept(s.id), 'accept'),
         glyph('cross', 'Reject suggestion', () => actions.reject(s.id), 'quiet'))),
-    el('p', {}, s.note || describe(s)),
+    el('p', {}, s.note ? inlineMarkdown(s.note) : describe(s)),
+    s.anchorLost ? el('p', { class: 'meta' }, 'The text it changes is gone.') : null)
+}
+
+function fixBlock(s, model) {
+  const { actions } = model
+  return el('div', { class: 'fix', 'data-suggestion': s.id, 'aria-label': 'Suggested fix from Claude' },
+    el('div', { class: 'fix-head' },
+      el('span', { class: 'who claude' }, 'Claude'),
+      el('span', { class: 'when' }, 'Suggested fix'),
+      el('span', { class: 'actions' },
+        s.anchorLost ? null : glyph('check', 'Accept fix and resolve comment', () => actions.accept(s.id), 'accept'),
+        glyph('cross', 'Reject fix', () => actions.reject(s.id), 'quiet'))),
+    el('p', {}, s.note ? inlineMarkdown(s.note) : describe(s)),
     s.anchorLost ? el('p', { class: 'meta' }, 'The text it changes is gone.') : null)
 }
 
@@ -103,10 +138,12 @@ function commentPanel(c, model) {
         c.status === 'resolved'
           ? glyph('reopen', 'Reopen comment', () => actions.reopen(c.id), 'quiet')
           : glyph('resolve', 'Resolve comment', () => actions.resolve(c.id)))),
-    el('p', {}, c.body))
+    el('p', {}, inlineMarkdown(c.body)))
   if (c.thread?.length) {
-    panel.append(el('div', { class: 'thread' }, c.thread.map((m) => el('div', {}, m.author === 'Claude' ? el('span', { class: 'who claude' }, 'Claude') : el('span', { class: 'who' }, 'You'), el('p', {}, m.body)))))
+    panel.append(el('div', { class: 'thread' }, c.thread.map((m) => el('div', {}, m.author === 'Claude' ? el('span', { class: 'who claude' }, 'Claude') : el('span', { class: 'who' }, 'You'), el('p', {}, inlineMarkdown(m.body))))))
   }
+  // Claude's suggestions that resolve this comment live in its panel: accepting one resolves the comment.
+  for (const s of c.fixes ?? []) panel.append(fixBlock(s, model))
   if (c.status !== 'resolved') {
     panel.append(textField(`reply-${c.id}`, {
       placeholder: 'Reply',

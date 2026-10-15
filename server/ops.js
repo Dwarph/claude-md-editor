@@ -325,7 +325,25 @@ export function replyToComment(session, id, body, author = 'Claude') {
   const comment = session.comments.get(id)
   if (!comment) throw new OpError(`No comment ${id}.`)
   const thread = [...(comment.thread ?? []), { author, body, at: new Date().toISOString() }]
-  session.ydoc.transact(() => session.comments.set(id, { ...comment, thread }), author === 'Claude' ? ORIGIN.agent : ORIGIN.user)
+  if (author === 'Claude') {
+    session.ydoc.transact(() => session.comments.set(id, { ...comment, thread }), ORIGIN.agent)
+    return
+  }
+  // The person's reply is sent straight away, so it wakes the agent like a submitted review.
+  queueReview(session, { commentIds: [id], replyTo: id }, () => session.comments.set(id, { ...comment, thread }))
+}
+
+/** Record an unseen review (inside `change`'s transaction) and wake whoever is listening for one. */
+function queueReview(session, fields, change) {
+  const review = { id: shortId(), note: '', commentIds: [], ...fields, submittedAt: new Date().toISOString(), seen: false }
+  session.ydoc.transact(() => {
+    change()
+    session.reviews.set(review.id, review)
+    session.addLog({ type: review.replyTo ? 'comment-reply' : 'review-submitted', by: 'user', id: review.id, comments: review.commentIds.length })
+  }, ORIGIN.user)
+  for (const waiter of session.reviewWaiters) waiter(review)
+  session.reviewWaiters.clear()
+  return review
 }
 
 export function setCommentResolved(session, id, by) {
@@ -337,21 +355,10 @@ export function setCommentResolved(session, id, by) {
 export function submitReview(session, note) {
   const drafts = [...session.comments.values()].filter((c) => c.status === 'draft')
   if (!drafts.length && !note?.trim()) throw new OpError('Nothing to submit: add a comment or an overall note first.')
-  const review = {
-    id: shortId(),
-    note: note?.trim() ?? '',
-    commentIds: drafts.map((c) => c.id),
-    submittedAt: new Date().toISOString(),
-    seen: false,
-  }
-  session.ydoc.transact(() => {
-    for (const c of drafts) session.comments.set(c.id, { ...c, status: 'submitted', reviewId: review.id })
-    session.reviews.set(review.id, review)
-    session.addLog({ type: 'review-submitted', by: 'user', id: review.id, comments: drafts.length })
-  }, ORIGIN.user)
-  for (const waiter of session.reviewWaiters) waiter(review)
-  session.reviewWaiters.clear()
-  return review
+  const reviewId = shortId()
+  return queueReview(session, { id: reviewId, note: note?.trim() ?? '', commentIds: drafts.map((c) => c.id) }, () => {
+    for (const c of drafts) session.comments.set(c.id, { ...c, status: 'submitted', reviewId })
+  })
 }
 
 export function unseenReviews(session) {
@@ -362,6 +369,7 @@ export function unseenReviews(session) {
 export function getReview(session) {
   const { doc, mapping } = session.snapshot()
   const reviews = unseenReviews(session)
+  const repliedTo = new Set(reviews.map((r) => r.replyTo).filter(Boolean))
   const comments = [...session.comments.values()]
     .filter((c) => c.status === 'submitted')
     .map((c) => {
@@ -375,6 +383,7 @@ export function getReview(session) {
         blockMarkdown: block !== null ? serializeBlocks([doc.child(block)]) : null,
         anchorLost: !range,
         thread: c.thread ?? [],
+        ...(repliedTo.has(c.id) ? { newReply: true } : {}),
       }
     })
   session.ydoc.transact(() => {

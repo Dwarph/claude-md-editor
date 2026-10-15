@@ -151,6 +151,7 @@ tool('get_review', {
   title: 'Get review comments',
   description:
     "The person's submitted review comments: each with its id, comment, the quoted text, block number and block markdown, and thread. " +
+    'A comment with newReply: true has a new reply from the person at the end of its thread: answer that reply. ' +
     'Address each by suggesting an edit with resolves_comment, and/or reply_to_comment. Then restart the review watcher, or wait_for_review again.',
   inputSchema: { path },
 }, async ({ path: p }) => api('agent/get_review', { path: abs(p) }))
@@ -162,8 +163,8 @@ const WAIT_DEFAULT_S = 50
 tool('wait_for_review', {
   title: 'Wait for review',
   description:
-    'Listen for the person to submit a review, for when you cannot run the background reviewWatcher (e.g. in Cowork). ' +
-    'Blocks until they submit, then returns the review (the same as get_review). If nothing arrives within timeout_seconds ' +
+    'Listen for the person to submit a review or reply to a comment thread, for when you cannot run the background reviewWatcher (e.g. in Cowork). ' +
+    'Blocks until they do, then returns the review (the same as get_review). If nothing arrives within timeout_seconds ' +
     'it returns "No review yet": call it again to keep listening. Your turn keeps running while you listen, so first tell ' +
     'the person you are listening and that sending you a message stops it.',
   inputSchema: {
@@ -191,13 +192,14 @@ tool('wait_for_review', {
 
 tool('reply_to_comment', {
   title: 'Reply to a comment',
-  description: 'Answer a review comment in its thread (questions, pushback, or what you changed).',
+  description: 'Answer a review comment in its thread (questions, pushback, or what you changed). ' +
+    'The body may use inline markdown: **bold**, *italic*, `code`, ~~strikethrough~~ and [links](https://example.com).',
   inputSchema: { path, comment_id: z.string(), body: z.string() },
 }, async ({ path: p, comment_id, body }) => api('agent/reply_to_comment', { path: abs(p), id: comment_id, body }))
 
 tool('resolve_comment', {
   title: 'Resolve a comment',
-  description: 'Mark a review comment resolved, optionally with a final reply. Prefer resolves_comment on a suggestion when the fix is an edit.',
+  description: 'Mark a review comment resolved, optionally with a final reply (inline markdown allowed). Prefer resolves_comment on a suggestion when the fix is an edit.',
   inputSchema: { path, comment_id: z.string(), body: z.string().optional() },
 }, async ({ path: p, comment_id, body }) => api('agent/resolve_comment', { path: abs(p), id: comment_id, body }))
 

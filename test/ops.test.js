@@ -210,6 +210,26 @@ describe('review comments', () => {
     expect(read()).toContain('- write docs')
   })
 
+  it("wakes waiters when the person replies to a thread, but not on Claude's own replies", async () => {
+    const { session } = open('Ship on Friday.\n')
+    const cid = addComment(session, 'Friday', 'Which one?')
+    ops.submitReview(session)
+    ops.getReview(session)
+
+    ops.replyToComment(session, cid, 'Noted.')
+    expect(ops.unseenReviews(session)).toHaveLength(0)
+
+    const woken = new Promise((resolve) => session.reviewWaiters.add(resolve))
+    ops.replyToComment(session, cid, 'The **13th**, please', 'You')
+    expect((await woken).replyTo).toBe(cid)
+
+    const got = ops.getReview(session)
+    expect(got.comments[0]).toMatchObject({ id: cid, newReply: true })
+    expect(got.comments[0].thread.at(-1)).toMatchObject({ author: 'You', body: 'The **13th**, please' })
+    expect(ops.unseenReviews(session)).toHaveLength(0)
+    expect(ops.getReview(session).comments[0].newReply).toBeUndefined()
+  })
+
   it('will not submit an empty review', () => {
     const { session } = open('Text.\n')
     expect(() => ops.submitReview(session, '')).toThrow(/Nothing to submit/)

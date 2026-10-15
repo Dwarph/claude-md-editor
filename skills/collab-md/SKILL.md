@@ -88,7 +88,9 @@ they only asked you to "write" or "draft" something.
 
 ## Handling a review
 
-When the watcher exits, `wait_for_review` returns a review, or they say "review's in":
+When the watcher exits, `wait_for_review` returns a review, or they say "review's in". Replying
+to a comment thread wakes you the same way: those comments come back with `newReply: true`, so
+answer the latest message in their thread.
 
 1. `get_review` (not needed when `wait_for_review` already returned the review). Each comment has an `id`, their `comment`, the `quote` it's attached to, and
    the block it sits in. Overall notes come back in `notes`.
@@ -96,6 +98,7 @@ When the watcher exits, `wait_for_review` returns a review, or they say "review'
    - The fix is an edit: suggest it with `resolves_comment: <id>`. Accepting the suggestion
      resolves the comment.
    - The comment asks a question, or you disagree: `reply_to_comment` and leave it open.
+     Replies can use inline markdown (`**bold**`, `*italic*`, `` `code` ``, links).
    - Nothing to change: `resolve_comment` with a short reply saying why.
 3. Tell them briefly in chat what you did ("4 suggestions, 1 question back to you on the intro").
 4. Listen for the next review the same way: restart the `reviewWatcher` in the background, or

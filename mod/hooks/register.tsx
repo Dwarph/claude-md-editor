@@ -147,11 +147,12 @@ async function poll($: Engine) {
 /** Tells the agent a review is in: a prompt when idle, or a note it reads at its next step. */
 async function announce($: Engine, base: string | undefined, doc: DocSummary, via: 'prompt' | 'append') {
   let comments = doc.openComments
+  let replies = 0
   try {
-    // Answers at once while a review is unseen, with its comment count.
-    if (base) comments = (await call<{ comments: number }>(base, $, `docs/${doc.id}/wait-review`)).comments
+    // Answers at once while a review is unseen, with its comment and reply counts.
+    if (base) ({ comments, replies = 0 } = await call<{ comments: number; replies?: number }>(base, $, `docs/${doc.id}/wait-review`))
   } catch {}
-  const text = noticeText(doc, comments)
+  const text = noticeText(doc, comments, replies)
   if (via === 'append') {
     await $.session.append({ message: { type: 'user', content: [{ type: 'text', text }] } })
   } else {
