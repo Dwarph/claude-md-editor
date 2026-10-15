@@ -1,5 +1,8 @@
-// Draws the agent's pending suggestions (strikethrough + green insert with
-// accept/reject) and review comment highlights over the live document.
+// Draws Claude's pending suggestions (grey removed text, green added text),
+// review comment highlights (marker fill) and the brief tint on Claude's
+// Edit live changes over the live document. Accept/reject live in the margin
+// panels; elements here carry data-suggestion / data-comment so panels and
+// text can highlight each other.
 // Anchors live in Yjs maps, so positions are resolved through the y-prosemirror
 // binding's mapping on each refresh and mapped through local edits in between.
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
@@ -9,6 +12,8 @@ import { ySyncPluginKey } from 'y-prosemirror'
 import { resolveRange } from '../shared/positions.js'
 
 export const reviewKey = new PluginKey('cmd-review')
+
+const RECENT_MS = 4500
 
 export function bindingMapping(state) {
   return ySyncPluginKey.getState(state)?.binding?.mapping ?? null
@@ -25,91 +30,51 @@ export function rangeOf(item, ctx, state) {
 }
 
 /**
- * ctx: { ydoc, fragment, suggestions, comments, schema, parse, onAccept, onReject, onCommentClick, activeComment() }
+ * ctx: { ydoc, fragment, suggestions, comments, recent, schema, parse, activeComment(), onCommentClick(id), onSuggestionClick(id) }
  */
 export function reviewPlugin(ctx) {
-  const serializer = () => DOMSerializer.fromSchema(ctx.schema)
-
   function renderMarkdown(markdown, inline) {
     const wrap = document.createElement(inline ? 'span' : 'div')
     if (!markdown.trim()) return wrap
     try {
       const doc = ctx.parse(markdown)
       const content = inline && doc.childCount === 1 && doc.firstChild.isTextblock ? doc.firstChild.content : doc.content
-      wrap.appendChild(serializer().serializeFragment(content))
+      wrap.appendChild(DOMSerializer.fromSchema(ctx.schema).serializeFragment(content))
     } catch {
       wrap.textContent = markdown
     }
     return wrap
   }
 
-  function controls(s, block) {
-    const box = document.createElement('span')
-    box.className = `milkdown-diff-controls cmd-controls${block ? ' milkdown-diff-controls-block' : ''}`
-    box.contentEditable = 'false'
-    const accept = document.createElement('button')
-    accept.className = 'milkdown-diff-accept'
-    accept.type = 'button'
-    accept.title = 'Accept suggestion'
-    accept.textContent = '✓'
-    accept.addEventListener('mousedown', (e) => { e.preventDefault(); ctx.onAccept(s.id) })
-    const reject = document.createElement('button')
-    reject.className = 'milkdown-diff-reject'
-    reject.type = 'button'
-    reject.title = 'Reject suggestion'
-    reject.textContent = '✕'
-    reject.addEventListener('mousedown', (e) => { e.preventDefault(); ctx.onReject(s.id) })
-    box.append(accept, reject)
-    if (s.note) {
-      const note = document.createElement('span')
-      note.className = 'cmd-note'
-      note.textContent = s.note
-      box.append(note)
-    }
-    return box
+  const insertion = (s, inline) => () => {
+    const el = renderMarkdown(s.markdown, inline)
+    el.className = inline ? 'cmd-ins' : 'cmd-ins-block'
+    el.dataset.suggestion = s.id
+    el.contentEditable = 'false'
+    return el
   }
 
-  function inlineWidget(s) {
-    return () => {
-      const el = renderMarkdown(s.markdown, true)
-      el.className = s.markdown ? 'milkdown-diff-added cmd-insert' : 'cmd-insert cmd-insert-empty'
-      el.dataset.suggestion = s.id
-      el.contentEditable = 'false'
-      el.append(controls(s, false))
-      return el
-    }
-  }
-
-  function blockWidget(s) {
-    return () => {
-      const el = renderMarkdown(s.markdown, false)
-      el.className = s.markdown.trim() ? 'milkdown-diff-added-block cmd-insert-block' : 'cmd-insert-block cmd-insert-empty'
-      el.dataset.suggestion = s.id
-      el.contentEditable = 'false'
-      el.append(controls(s, true))
-      return el
-    }
-  }
+  let nextExpiry = null
 
   function build(state) {
     const decos = []
     for (const s of ctx.suggestions.values()) {
       const range = rangeOf(s, ctx, state)
       if (!range) continue
-      const key = `sg-${s.id}-${s.markdown.length}-${s.note?.length ?? 0}`
-      const spec = { key, ignoreSelection: true, stopEvent: () => true }
+      const spec = { key: `sg-${s.id}-${s.markdown.length}`, ignoreSelection: true, stopEvent: () => false }
       if (s.kind === 'inline') {
-        if (range.from < range.to) decos.push(Decoration.inline(range.from, range.to, { class: 'milkdown-diff-removed', 'data-suggestion': s.id }))
-        decos.push(Decoration.widget(range.to, inlineWidget(s), { ...spec, side: 1 }))
+        if (range.from < range.to) decos.push(Decoration.inline(range.from, range.to, { class: 'cmd-del', 'data-suggestion': s.id }))
+        if (s.markdown) decos.push(Decoration.widget(range.to, insertion(s, true), { ...spec, side: 1 }))
       } else {
         state.doc.forEach((node, offset) => {
           if (offset >= range.from && offset + node.nodeSize <= range.to) {
-            decos.push(Decoration.node(offset, offset + node.nodeSize, { class: 'milkdown-diff-removed-block', 'data-suggestion': s.id }))
+            decos.push(Decoration.node(offset, offset + node.nodeSize, { class: 'cmd-del-block', 'data-suggestion': s.id }))
           }
         })
-        decos.push(Decoration.widget(range.to, blockWidget(s), { ...spec, side: -1 }))
+        if (s.markdown.trim()) decos.push(Decoration.widget(range.to, insertion(s, false), { ...spec, side: -1 }))
       }
     }
+
     const active = ctx.activeComment()
     for (const c of ctx.comments.values()) {
       if (c.status === 'resolved') continue
@@ -117,6 +82,24 @@ export function reviewPlugin(ctx) {
       if (!range || range.from === range.to) continue
       const cls = `cmd-comment cmd-comment-${c.status}${c.id === active ? ' is-active' : ''}`
       decos.push(Decoration.inline(range.from, range.to, { class: cls, 'data-comment': c.id }))
+    }
+
+    // The text a comment is being written for, while the composer is open.
+    const composing = ctx.composing?.()
+    const target = composing ? rangeOf(composing, ctx, state) : null
+    if (target && target.from < target.to) {
+      decos.push(Decoration.inline(target.from, target.to, { class: 'cmd-comment cmd-comment-draft is-active' }))
+    }
+
+    nextExpiry = null
+    const now = Date.now()
+    for (const r of ctx.recent.values()) {
+      const left = r.at + RECENT_MS - now
+      if (left <= 0) continue
+      const range = rangeOf(r, ctx, state)
+      if (!range || range.from === range.to) continue
+      decos.push(Decoration.inline(range.from, range.to, { class: 'cmd-recent' }, { key: `recent-${r.id}` }))
+      nextExpiry = Math.min(nextExpiry ?? Infinity, left)
     }
     return DecorationSet.create(state.doc, decos)
   }
@@ -132,33 +115,42 @@ export function reviewPlugin(ctx) {
     },
     props: {
       decorations: (state) => reviewKey.getState(state),
-      handleClick(view, _pos, event) {
-        const id = event.target.closest?.('[data-comment]')?.dataset.comment
-        if (id) ctx.onCommentClick(id)
+      handleClick(_view, _pos, event) {
+        const target = event.target.closest?.('[data-comment], [data-suggestion]')
+        if (target?.dataset.comment) ctx.onCommentClick(target.dataset.comment)
+        else if (target?.dataset.suggestion) ctx.onSuggestionClick(target.dataset.suggestion)
         return false
       },
     },
     view(view) {
       let frame = 0
+      let expiryTimer = 0
       const refresh = () => {
         cancelAnimationFrame(frame)
         // Next frame: by then the sync binding has updated its Y<->PM mapping.
         frame = requestAnimationFrame(() => {
-          if (!view.isDestroyed) view.dispatch(view.state.tr.setMeta(reviewKey, 'refresh').setMeta('addToHistory', false))
+          if (view.isDestroyed) return
+          view.dispatch(view.state.tr.setMeta(reviewKey, 'refresh').setMeta('addToHistory', false))
+          clearTimeout(expiryTimer)
+          if (nextExpiry !== null) expiryTimer = setTimeout(refresh, nextExpiry + 50)
+          ctx.afterRefresh?.()
         })
       }
       ctx.suggestions.observe(refresh)
       ctx.comments.observe(refresh)
+      ctx.recent.observe(refresh)
       ctx.requestRefresh = refresh
       refresh()
       return {
-        update(view, prev) {
-          if (!prev.doc.eq(view.state.doc)) refresh()
+        update(v, prev) {
+          if (!prev.doc.eq(v.state.doc)) refresh()
         },
         destroy() {
           cancelAnimationFrame(frame)
+          clearTimeout(expiryTimer)
           ctx.suggestions.unobserve(refresh)
           ctx.comments.unobserve(refresh)
+          ctx.recent.unobserve(refresh)
         },
       }
     },

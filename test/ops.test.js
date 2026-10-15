@@ -150,13 +150,32 @@ describe('suggestions', () => {
     expect(ops.suggest(session, { target: { find: 'The **quick** fox' }, markdown: 'A fox' }).kind).toBe('inline')
   })
 
-  it('only applies direct edits when the person allowed them', () => {
+  it('follows the mode the person set: suggest, edit live, read only', () => {
     const { session, read } = open('Draft text.\n')
-    expect(() => ops.suggest(session, { target: { find: 'Draft' }, markdown: 'Final', direct: true })).toThrow(/switched off/)
-    session.settings.set('allowDirect', true)
-    ops.suggest(session, { target: { find: 'Draft' }, markdown: 'Final', direct: true })
+    expect(ops.getMode(session)).toBe('suggest')
+    ops.suggest(session, { target: { find: 'text' }, markdown: 'copy' })
+    expect(session.suggestions.size).toBe(1)
+    expect(read()).toBe('Draft text.\n')
+
+    session.settings.set('mode', 'live')
+    expect(ops.suggest(session, { target: { find: 'Draft' }, markdown: 'Final' })).toMatchObject({ applied: true })
     expect(read()).toBe('Final text.\n')
-    expect(session.suggestions.size).toBe(0)
+    // The live edit is marked so editors can tint it.
+    const [recent] = [...session.recent.values()]
+    const { doc, mapping } = session.snapshot()
+    const { resolveRange } = ops.__test
+    const range = resolveRange(recent, session.ydoc, session.fragment, mapping)
+    expect(doc.textBetween(range.from, range.to)).toBe('Final')
+
+    session.settings.set('mode', 'readonly')
+    expect(() => ops.suggest(session, { target: { find: 'Final' }, markdown: 'x' })).toThrow(/Read only/)
+    expect(ops.renderForAgent(session)).toContain('Mode: Read only')
+  })
+
+  it('treats the old direct-edit switch as Edit live', () => {
+    const { session } = open('Text.\n')
+    session.settings.set('allowDirect', true)
+    expect(ops.getMode(session)).toBe('live')
   })
 })
 

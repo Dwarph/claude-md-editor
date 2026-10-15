@@ -73,7 +73,6 @@ tool('get_selection', {
 const suggestionExtras = {
   note: z.string().optional().describe('Short reason shown beside the suggestion.'),
   resolves_comment: z.string().optional().describe('Comment id this addresses; accepting the suggestion resolves the comment.'),
-  direct: z.boolean().optional().describe('Apply immediately instead of suggesting. Only works if the person enabled direct edits.'),
 }
 
 tool('suggest_edit', {
@@ -81,7 +80,8 @@ tool('suggest_edit', {
   description:
     'Propose replacing text. Either `find` exact rendered text inside one block (no markdown syntax) and give inline markdown in `replace`, ' +
     'or replace whole blocks by `block` / `blocks` [first, last] with any markdown. An empty `replace` suggests deleting. ' +
-    'Shows as a highlighted suggestion the person accepts or rejects.',
+    'What happens depends on the mode the person set (read_document shows it): Suggest makes a highlighted suggestion they accept or reject, ' +
+    'Edit live applies it straight away, Read only refuses.',
   inputSchema: {
     path,
     find: z.string().optional().describe('Exact text to replace, as it reads in the rendered document, within one paragraph/heading/list item.'),
@@ -91,10 +91,10 @@ tool('suggest_edit', {
     replace: z.string().describe('Replacement markdown. Inline only when using `find`.'),
     ...suggestionExtras,
   },
-}, async ({ path: p, find, occurrence, block, blocks, replace, note, resolves_comment, direct }) => {
+}, async ({ path: p, find, occurrence, block, blocks, replace, note, resolves_comment }) => {
   const target = find !== undefined ? { find, occurrence } : blocks ? { blocks } : block !== undefined ? { block } : null
   if (!target) throw new Error('Give `find`, `block` or `blocks`.')
-  return api('agent/suggest', { path: abs(p), target, markdown: replace, note, resolves: resolves_comment, direct })
+  return api('agent/suggest', { path: abs(p), target, markdown: replace, note, resolves: resolves_comment })
 })
 
 tool('suggest_insert', {
@@ -107,10 +107,10 @@ tool('suggest_insert', {
     markdown: z.string().describe('Markdown to insert.'),
     ...suggestionExtras,
   },
-}, async ({ path: p, after_block, before_block, markdown, note, resolves_comment, direct }) => {
+}, async ({ path: p, after_block, before_block, markdown, note, resolves_comment }) => {
   const target = after_block !== undefined ? { after_block } : before_block !== undefined ? { before_block } : null
   if (!target) throw new Error('Give `after_block` or `before_block`.')
-  return api('agent/suggest', { path: abs(p), target, markdown, note, resolves: resolves_comment, direct })
+  return api('agent/suggest', { path: abs(p), target, markdown, note, resolves: resolves_comment })
 })
 
 tool('list_suggestions', {

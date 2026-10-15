@@ -36,6 +36,7 @@ export class DocSession {
     this.settings = this.ydoc.getMap('settings')
     this.log = this.ydoc.getArray('log')
     this.meta = this.ydoc.getMap('meta')
+    this.recent = this.ydoc.getMap('recent') // Claude's Edit live changes, tinted briefly in editors
     this.awareness = new awarenessProtocol.Awareness(this.ydoc)
     this.awareness.setLocalState({ user: AGENT_USER, agent: true, status: 'idle' })
     this.conns = new Map() // ws -> Set of awareness client ids it controls

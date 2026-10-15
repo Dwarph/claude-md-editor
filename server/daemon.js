@@ -48,6 +48,7 @@ function docSummary(session) {
     name: session.name,
     url: editorUrl(session),
     epoch: session.epoch,
+    mode: ops.getMode(session),
     suggestions: session.suggestions.size,
     openComments: [...session.comments.values()].filter((c) => c.status === 'submitted').length,
     draftComments: [...session.comments.values()].filter((c) => c.status === 'draft').length,
@@ -68,10 +69,10 @@ const agentRoutes = {
     return { text: ops.renderForAgent(session) }
   },
   get_selection: ({ path }) => ({ selection: ops.getSelection(docForPath(path)) }),
-  suggest: ({ path, target, markdown, note, resolves, direct }) => {
+  suggest: ({ path, target, markdown, note, resolves }) => {
     const session = docForPath(path)
-    session.setAgentStatus('editing', direct ? 'Editing' : 'Suggesting')
-    return ops.suggest(session, { target, markdown, note, resolves, direct })
+    session.setAgentStatus('editing', ops.getMode(session) === 'live' ? 'Editing' : 'Suggesting')
+    return ops.suggest(session, { target, markdown, note, resolves })
   },
   list_suggestions: ({ path }) => ({ suggestions: ops.listSuggestions(docForPath(path)).map(({ from, to, ...rest }) => rest) }),
   withdraw_suggestion: ({ path, id }) => {

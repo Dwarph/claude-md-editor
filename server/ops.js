@@ -10,7 +10,7 @@ import { ORIGIN } from './doc.js'
 export class OpError extends Error {}
 
 // Exposed for tests that create comments the way the browser does.
-export const __test = { encodeAnchor }
+export const __test = { encodeAnchor, resolveRange }
 
 const shortId = () => randomUUID().slice(0, 8)
 const LEAF_CHAR = '￼'
@@ -82,7 +82,7 @@ export function findText(doc, find, occurrence) {
 export function renderForAgent(session) {
   const { doc, mapping } = session.snapshot()
   const blocks = topBlocks(doc).map((b) => `[[block ${b.index}]]\n${serializeBlocks([b.node])}`)
-  const out = [`# ${session.name}  (${session.path})`, '', blocks.join('\n\n')]
+  const out = [`# ${session.name}  (${session.path})`, `Mode: ${MODES[getMode(session)]}`, '', blocks.join('\n\n')]
 
   const pending = listSuggestions(session, doc, mapping)
   if (pending.length) {
@@ -116,12 +116,30 @@ export function listSuggestions(session, doc, mapping) {
 
 // --- Suggestions ---------------------------------------------------------
 
+// What the person lets Claude do, set from the editor's "Claude can" control.
+export const MODES = {
+  live: 'Edit live: your changes land in the document straight away.',
+  suggest: 'Suggest: your changes arrive as suggestions the person accepts or rejects.',
+  readonly: 'Read only: you can read the document and reply to comments, but not change it.',
+}
+
+export function getMode(session) {
+  const mode = session.settings.get('mode')
+  if (mode in MODES) return mode
+  return session.settings.get('allowDirect') ? 'live' : 'suggest' // documents from before modes existed
+}
+
 /**
- * Create a suggestion (or apply it straight away in direct mode).
+ * Propose a change: a pending suggestion in Suggest mode, applied straight away
+ * in Edit live mode, refused in Read only.
  * target: { find, occurrence } for inline text, { block } / { blocks: [a, b] } to
  * replace whole blocks, or { after_block } / { before_block } to insert blocks.
  */
-export function suggest(session, { target, markdown, note, resolves, direct }) {
+export function suggest(session, { target, markdown, note, resolves }) {
+  const mode = getMode(session)
+  if (mode === 'readonly') {
+    throw new OpError('The person has set you to Read only for this document: you can read it and reply to comments, but not change it. Describe the change in chat or a comment reply instead, or ask them to switch to Suggest.')
+  }
   const { doc, mapping } = session.snapshot()
   markdown = markdown ?? ''
   let kind
@@ -172,23 +190,21 @@ export function suggest(session, { target, markdown, note, resolves, direct }) {
     createdAt: new Date().toISOString(),
   }
 
-  if (direct) {
-    if (!session.settings.get('allowDirect')) {
-      throw new OpError('Direct edits are switched off for this document. Make a suggestion instead, or ask the person to turn on "Let Claude edit directly" in the editor.')
-    }
+  if (mode === 'live') {
     session.ydoc.transact(() => {
-      applySuggestionToDoc(session, suggestion, doc, mapping)
+      const changed = applySuggestionToDoc(session, suggestion, doc, mapping)
+      recordRecentEdit(session, changed)
       if (resolves) resolveComment(session, resolves, 'Claude')
       session.addLog({ type: 'direct-edit', by: 'agent', original, markdown })
     }, ORIGIN.agent)
-    return { applied: true, kind }
+    return { applied: true, kind, mode }
   }
 
   session.ydoc.transact(() => {
     session.suggestions.set(suggestion.id, suggestion)
     session.addLog({ type: 'suggested', by: 'agent', id: suggestion.id })
   }, ORIGIN.agent)
-  return { id: suggestion.id, kind }
+  return { id: suggestion.id, kind, mode }
 }
 
 function applySuggestionToDoc(session, suggestion, doc, mapping) {
@@ -226,6 +242,28 @@ function applySuggestionToDoc(session, suggestion, doc, mapping) {
   let next = tr.doc
   if (next.childCount === 0) next = schema.topNodeType.createAndFill()
   session.applyDoc(next, ORIGIN.agent)
+  // Where the new content now sits, so editors can flash it in Edit live mode.
+  const max = next.content.size
+  return { from: Math.min(tr.mapping.map(range.from, -1), max), to: Math.min(tr.mapping.map(range.to, 1), max) }
+}
+
+const RECENT_KEEP_MS = 60_000
+
+/** Mark text Claude just changed in Edit live mode; editors tint it briefly. */
+function recordRecentEdit(session, range) {
+  const { mapping } = session.snapshot()
+  const now = Date.now()
+  for (const [id, entry] of session.recent.entries()) {
+    if (now - entry.at > RECENT_KEEP_MS) session.recent.delete(id)
+  }
+  if (range.from >= range.to) return
+  const id = shortId()
+  session.recent.set(id, {
+    id,
+    from: encodeAnchor(range.from, session.fragment, mapping),
+    to: encodeAnchor(range.to, session.fragment, mapping),
+    at: now,
+  })
 }
 
 function joinListsAt(tr, pos) {

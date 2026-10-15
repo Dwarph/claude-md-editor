@@ -39,8 +39,12 @@ disk edit, skip review, and fight their cursor. Use the tools below.
 - Prefer several small, independent suggestions over one big rewrite: they accept or reject
   each one. Don't pile a second suggestion onto text that already has one pending. Use
   `withdraw_suggestion` and re-suggest instead.
-- `direct: true` applies a change immediately, but only works if they switched on "Let Claude
-  edit directly". Use it only when they've asked you to just make the changes.
+- The person sets your mode in the editor, and `read_document` shows it on its second line:
+  - **Suggest** (default): your edits become suggestions they accept or reject.
+  - **Edit live**: the same tools apply your edits straight away, so keep them as careful and
+    small as suggestions. They can't reject them, only edit over them.
+  - **Read only**: edit tools are refused. Reply to comments or answer in chat instead, and
+    don't ask them to change the mode unless they want your edits in the document.
 - They said "this", "here" or "the bit I've selected"? Call `get_selection`.
 
 ## Handling a review

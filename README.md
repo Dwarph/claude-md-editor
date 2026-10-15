@@ -38,17 +38,22 @@ The `collab-md` skill takes it from there:
 
 - Claude opens the doc and shows you the editor (the built-in browser in the Claude desktop app,
   or a link elsewhere).
-- **Claude's edits** appear inline: red strikethrough for removed text and green for new text,
-  with ✓ / ✕ beside each one. They're also listed in the sidebar, with **Accept all** and
-  **Reject all**.
+- **Claude can:** the control in the top bar sets what Claude may do in this document.
+  - *Edit live*: its changes land straight away, briefly tinted green.
+  - *Suggest* (the default): its changes wait for you to accept them.
+  - *Read only*: it can read the doc and reply to comments, but not change anything.
+- **Claude's suggestions** appear in the text: removed words in grey with a strikethrough, new
+  words tinted green. Each has a panel in the right margin, beside its text, with ✓ and ✕.
 - **Your edits** go straight into the document. Claude sees them the next time it reads.
-- **Comments:** select text, then press **💬 Comment** (or Ctrl+Alt+M). Comments stay drafts
-  until you press **Submit review**. Claude replies in the thread, or suggests a fix that
-  resolves the comment when you accept it.
-- **Notify:** the top bar shows *Claude is listening* when Claude's review watcher (or the
-  [mod](#claude-code-mod)) is running. Submitting then wakes Claude automatically. If it isn't
-  listening, tell Claude "review's in".
-- **Let Claude edit directly** skips suggestions for when you just want the changes made.
+- **Comments:** select text, then press the comment button at the end of the formatting
+  toolbar (or Ctrl+Alt+M). The text gets a marker
+  highlight, and the comment stays a draft until you press **Submit review**. Claude replies
+  in the thread, or suggests a fix that resolves the comment when you accept it.
+- **Review bar:** the bar at the bottom counts what's pending and holds **Accept all** and
+  **Submit review**.
+- **Notify:** a green dot on Claude's avatar means Claude is listening, through its review
+  watcher or the [mod](#claude-code-mod). Submitting then wakes Claude automatically. If it
+  isn't listening, tell Claude "review's in".
 
 ## How it works
 

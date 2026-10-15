@@ -1,7 +1,7 @@
 import { Crepe } from '@milkdown/crepe'
 import { editorViewCtx, parserCtx, remarkStringifyOptionsCtx, schemaCtx } from '@milkdown/kit/core'
 import { $prose } from '@milkdown/kit/utils'
-import { Plugin } from '@milkdown/kit/prose/state'
+import { Plugin, TextSelection } from '@milkdown/kit/prose/state'
 import * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
 import { ySyncPlugin } from 'y-prosemirror'
@@ -9,56 +9,77 @@ import '@milkdown/crepe/theme/common/style.css'
 import './style.css'
 import { FRAGMENT_NAME, REMARK_STRINGIFY_OPTIONS } from '../shared/markdown-options.js'
 import { encodeAnchor } from '../shared/positions.js'
-import { bindingMapping, rangeOf, reviewKey, reviewPlugin } from './review-plugin.js'
-import { el, renderSidebar } from './sidebar.js'
+import { bindingMapping, rangeOf, reviewPlugin } from './review-plugin.js'
+import { el, layoutMargin, renderMargin } from './margin.js'
 
 const app = document.getElementById('app')
 const docId = /^\/doc\/([0-9a-f]{12})/.exec(location.pathname)?.[1]
+
+// Outline drawn like Crepe's own toolbar icons; the toolbar sets colour and fill, so fill is turned off here.
+const COMMENT_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path style="fill:none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" d="M5 5.75h14v9.5h-7.75L7.5 18.5v-3.25H5z"/><path style="fill:none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M8.5 9.25h7M8.5 12h4.25"/></svg>'
+
+// What the person lets Claude do (mirrors server/ops.js MODES).
+const MODES = [
+  { id: 'live', label: 'Edit live', title: 'Claude’s changes land in the document straight away' },
+  { id: 'suggest', label: 'Suggest', title: 'Claude suggests changes and comments; nothing lands until you accept' },
+  { id: 'readonly', label: 'Read only', title: 'Claude can read the document and reply to comments, but not change it' },
+]
 
 if (docId) openEditor(docId)
 else showDocumentList()
 
 async function showDocumentList() {
   const { documents } = await fetch('/api/docs').then((r) => r.json())
+  document.title = 'Shared documents'
   app.replaceChildren(
     el('main', { class: 'doc-list' },
-      el('h1', {}, 'Open documents'),
+      el('h1', {}, 'Shared documents'),
       documents.length
-        ? el('ul', {}, ...documents.map((d) => el('li', {}, el('a', { href: `/doc/${d.id}` }, d.name), el('span', { class: 'muted' }, ` ${d.path}`))))
-        : el('p', { class: 'muted' }, 'Nothing open yet. Ask Claude to open a markdown file in the shared editor.')),
+        ? el('ul', {}, ...documents.map((d) => el('li', {}, el('a', { href: `/doc/${d.id}` }, el('span', {}, d.name), el('span', { class: 'path' }, d.path)))))
+        : el('p', {}, 'Nothing is open yet. Ask Claude to open a markdown file in the shared editor.')),
   )
 }
 
-async function api(path, body) {
-  const res = await fetch(`/api/docs/${docId}/${path}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body ?? {}),
-  })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    toast(data.error ?? `Request failed (${res.status})`)
-    throw new Error(data.error)
-  }
-  return data
-}
-
+let toastTimer = 0
 function toast(message) {
+  document.querySelector('.toast')?.remove()
   const node = el('div', { class: 'toast', role: 'status' }, message)
   document.body.append(node)
-  setTimeout(() => node.remove(), 4000)
+  clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => node.remove(), 4000)
 }
 
 async function openEditor(id) {
   const info = await fetch(`/api/docs/${id}`).then((r) => (r.ok ? r.json() : null))
   if (!info) {
-    app.replaceChildren(el('main', { class: 'doc-list' }, el('h1', {}, 'Document not open'), el('p', { class: 'muted' }, 'The editor server restarted or the document was closed. Ask Claude to open it again.'), el('a', { href: '/' }, 'All open documents')))
+    app.replaceChildren(el('main', { class: 'doc-list' },
+      el('h1', {}, 'This document isn’t open'),
+      el('p', {}, 'The editor server restarted or the document was closed. Ask Claude to open it again.'),
+      el('p', {}, el('a', { href: '/' }, 'All shared documents'))))
     return
   }
-  document.title = `${info.name} · Markdown editor`
+  document.title = info.name
+
+  async function api(path, body) {
+    const res = await fetch(`/api/docs/${id}/${path}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body ?? {}),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      toast(data.error ?? `Something went wrong (${res.status}).`)
+      throw new Error(data.error)
+    }
+    return data
+  }
 
   const ydoc = new Y.Doc()
   const fragment = ydoc.getXmlFragment(FRAGMENT_NAME)
+  const suggestions = ydoc.getMap('suggestions')
+  const comments = ydoc.getMap('comments')
+  const recent = ydoc.getMap('recent')
+  const settings = ydoc.getMap('settings')
   const provider = new WebsocketProvider(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`, id, ydoc, {
     params: { epoch: info.epoch },
   })
@@ -70,38 +91,38 @@ async function openEditor(id) {
     }
   })
   const awareness = provider.awareness
-  awareness.setLocalStateField('user', { name: 'You', color: '#3b82f6' })
+  awareness.setLocalStateField('user', { name: 'You' })
 
-  // Layout: header, editor, sidebar.
-  const status = el('span', { class: 'conn', title: 'Connection to the editor server' })
-  const agentPill = el('span', { class: 'agent-pill' })
-  const directToggle = el('input', { type: 'checkbox', id: 'direct' })
+  // --- Layout -------------------------------------------------------------
+  const status = el('span', { class: 'doc-status' }, 'Connecting…')
+  const avatar = el('span', { class: 'avatar', 'aria-hidden': 'true' }, 'C')
+  // The white pill behind the chosen mode; it slides between options.
+  const modeThumb = el('span', { class: 'segmented-thumb', 'aria-hidden': 'true' })
+  const modeButtons = MODES.map((m) =>
+    el('button', { type: 'button', role: 'radio', 'aria-checked': 'false', title: m.title, 'data-mode': m.id, onclick: () => setMode(m.id) }, m.label))
   const editorHost = el('div', { class: 'editor-host' })
-  const sidebar = el('aside', { class: 'sidebar' })
+  const margin = el('div', { class: 'margin', 'aria-label': 'Suggestions and comments' })
+  const bar = el('div', { class: 'reviewbar', role: 'region', 'aria-label': 'Review', hidden: true })
+
   app.replaceChildren(
     el('header', { class: 'topbar' },
-      el('div', { class: 'title' }, el('strong', {}, info.name), el('span', { class: 'path muted', title: info.path }, info.path)),
-      el('div', { class: 'topbar-right' },
-        agentPill,
-        el('label', { class: 'toggle', title: 'When on, Claude can apply edits straight away instead of suggesting them' }, directToggle, ' Let Claude edit directly'),
-        status)),
-    el('div', { class: 'layout' }, el('div', { class: 'page' }, editorHost), sidebar),
+      el('div', { class: 'doc-title' }, el('strong', { title: info.path }, info.name), status),
+      el('div', { class: 'claude-can' },
+        avatar,
+        el('span', { id: 'claude-can-label' }, 'Claude can'),
+        el('div', { class: 'segmented', role: 'radiogroup', 'aria-labelledby': 'claude-can-label' }, modeThumb, modeButtons))),
+    el('div', { class: 'workspace' }, el('div', { class: 'page' }, editorHost), margin),
+    bar,
   )
 
-  const setConn = (state) => { status.dataset.state = state; status.textContent = state === 'connected' ? 'Live' : state === 'connecting' ? 'Connecting…' : 'Offline' }
-  setConn('connecting')
-  provider.on('status', ({ status: s }) => setConn(s))
+  let connected = false
+  provider.on('status', ({ status: s }) => { connected = s === 'connected'; renderHeader() })
 
   await new Promise((resolve) => (provider.synced ? resolve() : provider.once('sync', resolve)))
 
-  const suggestions = ydoc.getMap('suggestions')
-  const comments = ydoc.getMap('comments')
-  const reviews = ydoc.getMap('reviews')
-  const settings = ydoc.getMap('settings')
-
-  let activeComment = null
-  let draftAnchor = null // { from, to, quote } while the comment composer is open
   let view = null
+  let active = null // id of the focused panel
+  let draftAnchor = null // { from, to, quote } while composing a comment
   const hooks = { selection: () => {} }
 
   const reviewCtx = {
@@ -109,19 +130,21 @@ async function openEditor(id) {
     fragment,
     suggestions,
     comments,
+    recent,
     schema: null,
     parse: null,
-    activeComment: () => activeComment,
-    onAccept: (sid) => api('accept', { id: sid }),
-    onReject: (sid) => api('reject', { id: sid }),
-    onCommentClick: (cid) => focusComment(cid, false),
+    activeComment: () => active,
+    composing: () => draftAnchor,
+    onCommentClick: (cid) => focusItem(cid, false),
+    onSuggestionClick: (sid) => focusItem(sid, false),
+    afterRefresh: () => relayout(),
   }
 
   const crepe = new Crepe({
     root: editorHost,
     defaultValue: '',
     features: {
-      // These add node types the markdown round-trip on the server doesn't know.
+      // These add node types the server's markdown round-trip doesn't know.
       [Crepe.Feature.ImageBlock]: false,
       [Crepe.Feature.Latex]: false,
       [Crepe.Feature.AI]: false,
@@ -129,21 +152,30 @@ async function openEditor(id) {
     },
     featureConfigs: {
       [Crepe.Feature.Placeholder]: { text: 'Start writing…', mode: 'doc' },
+      // Comment sits in the selection toolbar, straight after code and link (same group, no divider).
+      [Crepe.Feature.Toolbar]: {
+        buildToolbar: (builder) => {
+          builder.getGroup('function').addItem('comment', {
+            icon: COMMENT_ICON,
+            label: 'Comment',
+            shortcut: 'Ctrl+Alt+M',
+            active: () => false,
+            onRun: () => startComment(),
+          })
+        },
+      },
     },
   })
   crepe.editor
     .config((ctx) => ctx.update(remarkStringifyOptionsCtx, (prev) => ({ ...prev, ...REMARK_STRINGIFY_OPTIONS })))
     .use($prose(() => ySyncPlugin(fragment)))
     .use($prose(() => reviewPlugin(reviewCtx)))
-    // Selection changes (and focus) drive the comment button and what Claude sees as "your selection".
+    // Selection changes (and focus) drive the Comment button and what Claude sees as "your selection".
     .use($prose(() => new Plugin({
-      view: () => ({
-        update: (v, prev) => { if (!prev.selection.eq(v.state.selection)) hooks.selection() },
-      }),
+      view: () => ({ update: (v, prev) => { if (!prev.selection.eq(v.state.selection)) hooks.selection() } }),
       props: { handleDOMEvents: { focus: () => { hooks.selection(); return false }, blur: () => { setTimeout(hooks.selection, 150); return false } } },
     })))
   await crepe.create()
-
   crepe.editor.action((ctx) => {
     view = ctx.get(editorViewCtx)
     reviewCtx.schema = ctx.get(schemaCtx)
@@ -151,15 +183,24 @@ async function openEditor(id) {
   })
   reviewCtx.requestRefresh?.()
 
-  // --- Selection: share it with the agent, offer "Comment" ---
-  const commentButton = el('button', { class: 'comment-fab', type: 'button', title: 'Comment on selection (Ctrl+Alt+M)' }, '💬 Comment')
-  document.body.append(commentButton)
-  commentButton.addEventListener('mousedown', (e) => { e.preventDefault(); startComment() })
+  // --- Mode ---------------------------------------------------------------
+  function currentMode() {
+    const mode = settings.get('mode')
+    if (MODES.some((m) => m.id === mode)) return mode
+    return settings.get('allowDirect') ? 'live' : 'suggest'
+  }
+  function setMode(mode) {
+    ydoc.transact(() => {
+      settings.set('mode', mode)
+      settings.delete('allowDirect')
+    })
+  }
 
+  // --- Selection: share it with Claude, offer "Comment" -------------------
   let selectionTimer = 0
-  const onSelectionChange = () => {
+  hooks.selection = () => {
     if (!view) return
-    const { from, to, empty } = view.state.selection
+    const { from, to } = view.state.selection
     const mapping = bindingMapping(view.state)
     if (mapping && view.hasFocus()) {
       clearTimeout(selectionTimer)
@@ -171,16 +212,7 @@ async function openEditor(id) {
         })
       }, 150)
     }
-    if (!empty && view.hasFocus()) {
-      const coords = view.coordsAtPos(to)
-      commentButton.style.top = `${coords.bottom + window.scrollY + 6}px`
-      commentButton.style.left = `${Math.min(coords.left + window.scrollX, window.innerWidth - 140)}px`
-      commentButton.classList.add('visible')
-    } else {
-      commentButton.classList.remove('visible')
-    }
   }
-  hooks.selection = onSelectionChange
   document.addEventListener('keydown', (e) => {
     if (e.ctrlKey && e.altKey && e.key.toLowerCase() === 'm') { e.preventDefault(); startComment() }
   })
@@ -195,26 +227,22 @@ async function openEditor(id) {
       to: encodeAnchor(to, fragment, mapping),
       quote: view.state.doc.textBetween(from, to, '\n', '￼'),
     }
-    commentButton.classList.remove('visible')
+    active = 'composer'
+    // Collapse the selection so the formatting toolbar closes; the marker shows the target instead.
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, to)))
     render()
-    sidebar.querySelector('.composer textarea')?.focus()
+    reviewCtx.requestRefresh?.()
+    margin.querySelector('[data-key="composer"]')?.focus()
   }
 
   function saveComment(body) {
     if (!draftAnchor || !body.trim()) return
     const cid = crypto.randomUUID().slice(0, 8)
-    comments.set(cid, {
-      id: cid,
-      ...draftAnchor,
-      body: body.trim(),
-      author: 'You',
-      status: 'draft',
-      thread: [],
-      createdAt: new Date().toISOString(),
-    })
+    comments.set(cid, { id: cid, ...draftAnchor, body: body.trim(), author: 'You', status: 'draft', thread: [], createdAt: new Date().toISOString() })
     draftAnchor = null
-    activeComment = cid
-    render()
+    active = cid
+    const field = margin.querySelector('[data-key="composer"]')
+    if (field) field.value = ''
   }
 
   function updateComment(cid, patch) {
@@ -222,30 +250,27 @@ async function openEditor(id) {
     if (c) comments.set(cid, { ...c, ...patch })
   }
 
-  function focusComment(cid, scrollEditor) {
-    activeComment = cid
+  function focusItem(itemId, scrollText) {
+    active = itemId
     render()
     reviewCtx.requestRefresh?.()
-    sidebar.querySelector(`[data-card="${cid}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-    if (scrollEditor) scrollToItem(comments.get(cid))
+    if (scrollText) {
+      const item = suggestions.get(itemId) ?? comments.get(itemId)
+      const range = item && view ? rangeOf(item, reviewCtx, view.state) : null
+      if (range) {
+        const top = view.coordsAtPos(range.from).top + window.scrollY - window.innerHeight / 3
+        window.scrollTo({ top, behavior: 'smooth' })
+      }
+    }
   }
 
-  function scrollToItem(item) {
-    if (!item || !view) return
-    const range = rangeOf(item, reviewCtx, view.state)
-    if (!range) return
-    const node = view.domAtPos(range.from).node
-    ;(node.nodeType === 1 ? node : node.parentElement)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  function setHot(itemId, on) {
+    for (const node of editorHost.querySelectorAll(`[data-suggestion="${itemId}"], [data-comment="${itemId}"]`)) {
+      node.classList.toggle('is-hot', on)
+    }
   }
 
-  /** Comments and suggestions ordered as they appear in the document. */
-  function inDocOrder(items) {
-    return items
-      .map((item) => ({ item, pos: view ? rangeOf(item, reviewCtx, view.state)?.from ?? Infinity : 0 }))
-      .sort((a, b) => a.pos - b.pos)
-      .map(({ item }) => item)
-  }
-
+  // --- Rendering ----------------------------------------------------------
   function agentState() {
     for (const [clientId, state] of awareness.getStates()) {
       if (clientId !== ydoc.clientID && state?.agent) return state
@@ -253,39 +278,119 @@ async function openEditor(id) {
     return null
   }
 
-  function render() {
+  function renderHeader() {
     const agent = agentState()
-    agentPill.textContent = agent?.status && agent.status !== 'idle' ? `Claude: ${agent.message ?? agent.status}…` : agent?.watching ? 'Claude is listening' : 'Claude'
-    agentPill.dataset.state = agent?.status && agent.status !== 'idle' ? 'working' : agent?.watching ? 'watching' : 'idle'
-    agentPill.title = agent?.watching
-      ? 'Claude is waiting for your review and is notified when you submit.'
-      : 'Claude is not waiting for a review. After you submit, tell it "review\'s in".'
-    directToggle.checked = !!settings.get('allowDirect')
+    const working = agent?.status && agent.status !== 'idle'
+    if (!connected) {
+      status.textContent = 'Offline, reconnecting…'
+      status.dataset.state = 'offline'
+    } else if (working) {
+      status.textContent = `Claude is ${(agent.message ?? 'working').toLowerCase()}…`
+      status.dataset.state = 'working'
+    } else {
+      status.textContent = 'Saved'
+      status.dataset.state = ''
+    }
+    avatar.dataset.working = String(!!working)
+    avatar.dataset.listening = String(!!agent?.watching)
+    avatar.title = agent?.watching ? 'Claude is listening for your review' : 'Claude'
+    const mode = currentMode()
+    for (const button of modeButtons) button.setAttribute('aria-checked', String(button.dataset.mode === mode))
+    placeModeThumb()
+  }
 
-    renderSidebar(sidebar, {
-      suggestions: inDocOrder([...suggestions.values()]),
-      comments: inDocOrder([...comments.values()]),
-      reviews: [...reviews.values()],
-      draftAnchor,
-      activeComment,
-      agentWatching: !!agent?.watching,
-      actions: {
-        accept: (sid) => api('accept', { id: sid }),
-        reject: (sid) => api('reject', { id: sid }),
-        acceptAll: () => api('accept-all').then((r) => r.failed?.length && toast(`${r.failed.length} suggestion(s) couldn't be applied: their text is gone.`)),
-        rejectAll: () => api('reject-all'),
-        showSuggestion: (sid) => scrollToItem(suggestions.get(sid)),
-        saveComment,
-        cancelComment: () => { draftAnchor = null; render() },
-        editComment: (cid, body) => updateComment(cid, { body }),
-        deleteComment: (cid) => comments.delete(cid),
-        focusComment: (cid) => focusComment(cid, true),
-        reply: (cid, body) => api('reply', { id: cid, body }),
-        resolve: (cid) => api('resolve', { id: cid }),
-        reopen: (cid) => updateComment(cid, { status: 'submitted' }),
-        submitReview: (note) => api('submit-review', { note }).then(() => toast(agent?.watching ? 'Review sent. Claude has been notified.' : 'Review submitted. Tell Claude "review\'s in" to have it pick it up.')),
-      },
+  function placeModeThumb() {
+    const chosen = modeButtons.find((b) => b.getAttribute('aria-checked') === 'true')
+    if (!chosen) return
+    modeThumb.style.transform = `translateX(${chosen.offsetLeft}px)`
+    modeThumb.style.width = `${chosen.offsetWidth}px`
+    // Appear in place on first paint; slide only on later changes.
+    if (!modeThumb.dataset.ready) requestAnimationFrame(() => { modeThumb.dataset.ready = 'true' })
+  }
+
+  /** Items in document order, so panels stack the way the text reads. */
+  function marginItems() {
+    const items = []
+    for (const s of suggestions.values()) items.push({ id: s.id, type: 'suggestion', data: s })
+    for (const c of comments.values()) if (c.status !== 'resolved') items.push({ id: c.id, type: 'comment', data: c })
+    if (draftAnchor) items.push({ id: 'composer', type: 'composer', data: draftAnchor })
+    const pos = (item) => (view ? rangeOf(item.data, reviewCtx, view.state)?.from ?? Infinity : 0)
+    for (const item of items) {
+      item.pos = pos(item)
+      if (item.type === 'suggestion') item.data = { ...item.data, anchorLost: item.pos === Infinity }
+    }
+    return items.sort((a, b) => a.pos - b.pos)
+  }
+
+  function relayout() {
+    if (!view) return
+    const base = margin.getBoundingClientRect().top
+    const tops = new Map()
+    for (const panel of margin.querySelectorAll('.panel')) {
+      const pid = panel.dataset.id
+      const item = pid === 'composer' ? draftAnchor : suggestions.get(pid) ?? comments.get(pid)
+      const range = item ? rangeOf(item, reviewCtx, view.state) : null
+      if (range) tops.set(pid, view.coordsAtPos(range.from).top - base - 8)
+    }
+    layoutMargin(margin, tops, active)
+  }
+
+  function renderBar() {
+    const pending = suggestions.size
+    const drafts = [...comments.values()].filter((c) => c.status === 'draft').length
+    const open = [...comments.values()].filter((c) => c.status === 'submitted').length
+    const listening = !!agentState()?.watching
+    bar.hidden = pending + drafts + open === 0
+    const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+    bar.replaceChildren(...[
+      pending ? el('span', { class: 'count' }, plural(pending, 'suggestion')) : null,
+      drafts + open ? el('span', { class: 'count' }, plural(drafts + open, 'comment')) : null,
+      pending > 1 ? el('button', { type: 'button', onclick: acceptAll }, 'Accept all') : null,
+      drafts
+        ? el('button', {
+          type: 'button',
+          class: 'submit',
+          title: listening ? 'Claude is listening and will pick these up straight away' : 'Claude isn’t listening: tell it “review’s in” after submitting',
+          onclick: submitReview,
+        }, drafts > 1 ? `Submit review (${drafts})` : 'Submit review')
+        : null,
+    ].filter(Boolean))
+  }
+
+  async function acceptAll() {
+    const result = await api('accept-all')
+    if (result.failed?.length) toast(`${result.failed.length} couldn’t be applied because their text has changed.`)
+  }
+
+  async function submitReview() {
+    await api('submit-review', {})
+    toast(agentState()?.watching ? 'Review sent. Claude is on it.' : 'Review submitted. Tell Claude “review’s in” to pick it up.')
+  }
+
+  const actions = {
+    accept: (sid) => api('accept', { id: sid }),
+    reject: (sid) => api('reject', { id: sid }),
+    saveComment,
+    cancelComment: () => { draftAnchor = null; active = null; render(); reviewCtx.requestRefresh?.() },
+    editComment: (cid, body) => updateComment(cid, { body }),
+    deleteComment: (cid) => comments.delete(cid),
+    reply: (cid, body) => api('reply', { id: cid, body }),
+    resolve: (cid) => api('resolve', { id: cid }),
+    reopen: (cid) => updateComment(cid, { status: 'submitted' }),
+  }
+
+  function render() {
+    renderHeader()
+    renderMargin(margin, {
+      items: marginItems(),
+      active,
+      actions,
+      relayout,
+      onHover: setHot,
+      onFocus: (itemId) => focusItem(itemId, true),
     })
+    renderBar()
+    relayout()
   }
 
   // Redraw on the next frame: Yjs observers fire before the editor has applied
@@ -295,14 +400,16 @@ async function openEditor(id) {
     cancelAnimationFrame(renderFrame)
     renderFrame = requestAnimationFrame(render)
   }
-
-  directToggle.addEventListener('change', () => settings.set('allowDirect', directToggle.checked))
-  for (const map of [suggestions, comments, reviews, settings]) map.observe(scheduleRender)
+  for (const map of [suggestions, comments, settings]) map.observe(scheduleRender)
   // Awareness also carries your own selection; only redraw when Claude's state changes.
   let lastAgent = ''
   awareness.on('change', () => {
     const key = JSON.stringify(agentState())
-    if (key !== lastAgent) { lastAgent = key; render() }
+    if (key !== lastAgent) { lastAgent = key; renderHeader(); renderBar() }
   })
+  window.addEventListener('resize', () => { relayout(); placeModeThumb() })
+  document.fonts?.ready.then(() => { relayout(); placeModeThumb() })
+  // Relative times ("2m") age.
+  setInterval(scheduleRender, 60_000)
   render()
 }
