@@ -1,6 +1,6 @@
 {
   "name": "md-editor",
-  "version": "0.4.0",
+  "version": "0.4.2",
   "description": "Shared WYSIWYG markdown editor: you edit the rendered doc in your browser while Claude suggests live edits you accept or reject, and you send it code-review style comments.",
   "author": { "name": "Pip Turner" },
   "license": "MIT",

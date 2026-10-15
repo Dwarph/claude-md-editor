@@ -16,12 +16,30 @@ everything runs on `127.0.0.1`.
 
 Requires Node 20+ on the machine.
 
-**Cowork (or Claude Code), from the packaged file:** build `build/md-editor.plugin` with
-`npm run package:plugin` and add it to Cowork (drop it into a chat and accept it). The package
-holds the server as three bundled files, so it needs no install step or network access, and
-starts in about a second.
+### Cowork (or Claude Code), from the packaged file
 
-**Claude Code, from this repo:**
+The package holds the editor and the server as bundled files, so it needs no install step or
+network access, and starts in about a second.
+
+1. From a clone of this repo, build the package:
+
+   ```bash
+   npm install
+   npm run package:plugin
+   ```
+
+   This builds the editor, bundles the server and writes `build/md-editor.plugin`. The last line
+   it prints names the file and its version.
+2. Drop `build/md-editor.plugin` into a Cowork chat and accept it.
+3. Ask Claude to open a file in the editor (see [Use](#use)).
+
+**Updating:** raise `version` in `.claude-plugin/plugin.json` (and keep `package.json` in
+step), rebuild with `npm run package:plugin`, then add the new `build/md-editor.plugin` the same
+way. Always raise the version: the editor's background server keeps running between sessions,
+and a new install only replaces the old one when its version differs. Once it does, refresh any
+editor tabs you have open.
+
+### Claude Code, from this repo
 
 ```
 /plugin marketplace add Dwarph/claude-md-editor
@@ -30,14 +48,16 @@ starts in about a second.
 
 Installed this way it runs from source, and installs its dependencies (`npm ci`) on first start.
 
-**From a local clone, for development:**
+### From a local clone, for development
 
 ```bash
 npm install
 claude --plugin-dir /path/to/claude-md-editor
 ```
 
-**Where it works:** the editor opens in your browser and talks to a small server on your
+### Where it works
+
+The editor opens in your browser and talks to a small server on your
 computer, so it works wherever Claude's tools run on your own machine. In the Claude desktop
 app (the Code tab or Cowork) it opens in the built-in browser pane and brings it to the front;
 with no browser pane, such as in a terminal, it opens your default browser. Where Claude can't
