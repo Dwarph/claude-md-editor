@@ -28,9 +28,9 @@ const text = (value) => ({ content: [{ type: 'text', text: typeof value === 'str
 
 /** Wrap a handler so daemon errors come back as tool errors the model can read. */
 const tool = (name, config, handler) =>
-  server.registerTool(name, config, async (args) => {
+  server.registerTool(name, config, async (args, extra) => {
     try {
-      return text(await handler(args))
+      return text(await handler(args, extra))
     } catch (err) {
       return { ...text(err.message), isError: true }
     }
@@ -51,7 +51,7 @@ tool('open_document', {
     'with the person, not only when they ask for the editor. Then show it to the person: in a Claude app UI with a built-in browser pane, ' +
     'open the URL there and bring that pane to the front; only without a pane of your own, pass open_browser to open their default browser. ' +
     'Always give them the link as well. Then start the review watcher it returns ' +
-    'as a background command if you can run one.',
+    'as a background command if you can run one; otherwise listen with wait_for_review.',
   inputSchema: {
     path,
     open_browser: z.boolean().optional().describe("Also open the URL in the person's default browser (use when you have no browser pane of your own)."),
@@ -64,7 +64,8 @@ tool('open_document', {
   return {
     ...doc,
     reviewWatcher: `node "${CLI}" wait-review "${abs(p)}"`,
-    next: 'If you can run background shell commands on this machine, run reviewWatcher in the background so you are woken when the person submits review comments. Otherwise tell them to say "review\'s in" after submitting.',
+    next: 'If you can run background shell commands on this machine, run reviewWatcher in the background so you are woken when the person submits review comments. ' +
+      'Otherwise (e.g. in Cowork) tell them you are listening, then call wait_for_review.',
   }
 })
 
@@ -150,9 +151,43 @@ tool('get_review', {
   title: 'Get review comments',
   description:
     "The person's submitted review comments: each with its id, comment, the quoted text, block number and block markdown, and thread. " +
-    'Address each by suggesting an edit with resolves_comment, and/or reply_to_comment. Then restart the review watcher.',
+    'Address each by suggesting an edit with resolves_comment, and/or reply_to_comment. Then restart the review watcher, or wait_for_review again.',
   inputSchema: { path },
 }, async ({ path: p }) => api('agent/get_review', { path: abs(p) }))
+
+// Cowork cancels a tool call after about a minute, so the default stays under that;
+// a call that runs out returns quietly and the agent calls again.
+const WAIT_DEFAULT_S = 50
+
+tool('wait_for_review', {
+  title: 'Wait for review',
+  description:
+    'Listen for the person to submit a review, for when you cannot run the background reviewWatcher (e.g. in Cowork). ' +
+    'Blocks until they submit, then returns the review (the same as get_review). If nothing arrives within timeout_seconds ' +
+    'it returns "No review yet": call it again to keep listening. Your turn keeps running while you listen, so first tell ' +
+    'the person you are listening and that sending you a message stops it.',
+  inputSchema: {
+    path,
+    timeout_seconds: z.number().int().min(5).max(1800).optional()
+      .describe(`How long this call waits (default ${WAIT_DEFAULT_S}). Keep the default unless you know your client allows longer tool calls.`),
+  },
+}, async ({ path: p, timeout_seconds }, extra) => {
+  const file = abs(p)
+  const { id } = await api('agent/open_document', { path: file })
+  const deadline = Date.now() + (timeout_seconds ?? WAIT_DEFAULT_S) * 1000
+  // The daemon answers each long-poll within 25s: ask again until the deadline.
+  while (deadline - Date.now() > 1000) {
+    const notice = await api(`docs/${id}/wait-review?timeout=${deadline - Date.now()}`, {}, { method: 'GET', signal: extra?.signal })
+    if (notice) {
+      return {
+        status: 'Review submitted',
+        ...(await api('agent/get_review', { path: file })),
+        next: 'Address each comment (suggest_edit with resolves_comment, and/or reply_to_comment), then call wait_for_review again.',
+      }
+    }
+  }
+  return 'No review yet. Call wait_for_review again to keep listening.'
+})
 
 tool('reply_to_comment', {
   title: 'Reply to a comment',

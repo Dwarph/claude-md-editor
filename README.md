@@ -40,8 +40,9 @@ claude --plugin-dir /path/to/claude-md-editor
 **Where it works:** the editor opens in your browser and talks to a small server on your
 computer, so it works wherever Claude's tools run on your own machine. In the Claude desktop
 app (the Code tab or Cowork) it opens in the built-in browser pane and brings it to the front;
-with no browser pane, such as in a terminal, it opens your default browser. Where Claude can't run background commands (Cowork), it can't be woken
-when you submit a review, so tell it "review's in".
+with no browser pane, such as in a terminal, it opens your default browser. Where Claude can't
+run background commands (Cowork), it listens for your review with `wait_for_review` instead, so
+its turn keeps running while you edit. Send it a message to stop it listening.
 
 ## Use
 
@@ -66,7 +67,7 @@ instead of replying with it in chat. The `collab-md` skill takes it from there:
 - **Review bar:** the bar at the bottom counts what's pending and holds **Accept all** and
   **Submit review**.
 - **Notify:** a green dot on Claude's avatar means Claude is listening, through its review
-  watcher or the [mod](#claude-code-mod). Submitting then wakes Claude automatically. If it
+  watcher, `wait_for_review` or the [mod](#claude-code-mod). Submitting then wakes Claude automatically. If it
   isn't listening, tell Claude "review's in".
 
 ## How it works
@@ -90,7 +91,10 @@ cli.js wait-review ─────long-poll HTTP────────┘     
 - **Edits made outside the editor** (in git, Claude's Edit tool or another editor) are picked up
   by a file watcher and diffed in.
 - **Review notifications:** `node server/cli.js wait-review <file>` blocks until you submit a
-  review, then exits. Claude runs it as a background command, so the exit wakes it.
+  review, then exits. Claude runs it as a background command, so the exit wakes it. Where it
+  can't (Cowork), Claude calls the `wait_for_review` tool, which holds the same long-poll for up
+  to 50 seconds (Cowork cancels tool calls after about a minute) and returns the review, or
+  "No review yet" so Claude calls it again.
 
 ## Claude Code mod
 
@@ -156,6 +160,7 @@ clone.
 | `list_suggestions` / `withdraw_suggestion` | Manage pending suggestions |
 | `list_changes` | Your edits since Claude last read the doc (diff), plus accept/reject events |
 | `get_review` | Submitted comments, with quotes and context |
+| `wait_for_review` | Wait up to 50s for a review and return it; for clients without background commands |
 | `reply_to_comment` / `resolve_comment` | Answer or close a comment |
 | `list_documents` | Everything open in the editor |
 
@@ -179,7 +184,9 @@ Set `CLAUDE_MD_EDITOR_PORT` and `CLAUDE_MD_EDITOR_HOME` to run an isolated copy 
   doesn't include them yet.
 - A suggestion whose text you've rewritten heavily can't be applied. Accepting it fails with a
   message, and you can ask Claude to suggest again.
-- Review notifications (watcher or mod) only reach a Claude session that's open.
+- Review notifications (watcher, `wait_for_review` or mod) only reach a Claude session that's open.
+- In Cowork, Claude's turn stays running while it listens, and each 50-second wait is another
+  tool call. It stops listening after about 30 minutes, and then you tell it "review's in".
 
 ## License
 

@@ -50,9 +50,18 @@ they only asked you to "write" or "draft" something.
 4. If you can run background shell commands on their machine (Claude Code), run
    `reviewWatcher` as a **background** Bash command (`run_in_background: true`). It exits the
    moment they click **Submit review**, which wakes you up. Skip it if you've been told the
-   md-editor mod is loaded (it tells you about reviews itself), or if you can't run
-   background commands or the command fails, as in Cowork. In that case, tell them once:
-   "When you've submitted your review, tell me 'review's in'."
+   md-editor mod is loaded (it tells you about reviews itself).
+5. If you can't run background commands or the command fails (as in Cowork), listen with
+   `wait_for_review` instead. First tell them, in one line, that you're listening for their
+   review and that sending you a message stops it. Then call `wait_for_review` with the path.
+   - It returns the review as soon as they submit it (go to "Handling a review", skipping
+     `get_review`), or "No review yet" after about 50 seconds. Then call it again, without
+     any chat in between.
+   - Keep the default timeout: Cowork cancels tool calls after about a minute.
+   - After about 30 minutes of "No review yet", stop and tell them: "When you've submitted
+     your review, tell me 'review's in'."
+   - If they message you while you're listening, answer them. Once that's done, if they're
+     still reviewing, start listening again.
 
 ## Making changes
 
@@ -79,17 +88,18 @@ they only asked you to "write" or "draft" something.
 
 ## Handling a review
 
-When the watcher exits (or they say "review's in"):
+When the watcher exits, `wait_for_review` returns a review, or they say "review's in":
 
-1. `get_review`. Each comment has an `id`, their `comment`, the `quote` it's attached to, and
+1. `get_review` (not needed when `wait_for_review` already returned the review). Each comment has an `id`, their `comment`, the `quote` it's attached to, and
    the block it sits in. Overall notes come back in `notes`.
 2. For each comment:
    - The fix is an edit: suggest it with `resolves_comment: <id>`. Accepting the suggestion
      resolves the comment.
    - The comment asks a question, or you disagree: `reply_to_comment` and leave it open.
    - Nothing to change: `resolve_comment` with a short reply saying why.
-3. Restart the `reviewWatcher` in the background, if you're using one.
-4. Tell them briefly in chat what you did ("4 suggestions, 1 question back to you on the intro").
+3. Tell them briefly in chat what you did ("4 suggestions, 1 question back to you on the intro").
+4. Listen for the next review the same way: restart the `reviewWatcher` in the background, or
+   call `wait_for_review` again.
 
 ## Keeping up
 

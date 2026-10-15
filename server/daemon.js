@@ -198,7 +198,7 @@ async function handle(req, res) {
     if (parts[1] === 'docs' && parts[2]) {
       const session = docOrThrow(parts[2])
       if (parts.length === 3) return send(res, 200, docSummary(session))
-      if (parts[3] === 'wait-review') return waitForReview(session, res)
+      if (parts[3] === 'wait-review') return waitForReview(session, res, Number(url.searchParams.get('timeout')) || WAIT_TIMEOUT_MS)
       const route = editorRoutes[parts[3]]
       if (route && req.method === 'POST') return send(res, 200, route(session, await readJson(req)))
     }
@@ -209,8 +209,8 @@ async function handle(req, res) {
   }
 }
 
-/** Long-poll: answers as soon as an unseen review exists, else 204 after a while. */
-function waitForReview(session, res) {
+/** Long-poll: answers as soon as an unseen review exists, else 204 after `timeoutMs` (at most WAIT_TIMEOUT_MS). */
+function waitForReview(session, res, timeoutMs) {
   const existing = ops.unseenReviews(session)
   if (existing.length) return send(res, 200, reviewNotice(session, existing))
   const done = () => {
@@ -220,8 +220,10 @@ function waitForReview(session, res) {
   }
   const timer = setTimeout(() => {
     done()
+    // The waiter usually asks again within seconds: keep the editor showing "Claude is listening" meanwhile.
+    session.noteListener()
     res.writeHead(204).end()
-  }, WAIT_TIMEOUT_MS)
+  }, Math.min(Math.max(timeoutMs, 1000), WAIT_TIMEOUT_MS))
   const waiter = (review) => {
     done()
     if (review) send(res, 200, reviewNotice(session, [review]))
