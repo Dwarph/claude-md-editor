@@ -161,7 +161,8 @@ async function handle(req, res) {
   const parts = url.pathname.split('/').filter(Boolean)
   try {
     if (parts[0] !== 'api') return serveStatic(res, url.pathname)
-    lastApiCall = Date.now()
+    // The mod's background poll (`GET /api/docs?poll=1`) must not keep an unused daemon alive.
+    if (!url.searchParams.has('poll')) lastApiCall = Date.now()
 
     if (parts[1] === 'health') return send(res, 200, { ok: true, version: VERSION, pid: process.pid, port })
     if (parts[1] === 'shutdown' && req.method === 'POST') {
@@ -174,6 +175,8 @@ async function handle(req, res) {
       return send(res, 200, await route(await readJson(req)))
     }
     if (parts[1] === 'docs' && parts.length === 2) {
+      // `watch=<id>,<id>`: a poller that will announce reviews on these docs is listening.
+      for (const id of (url.searchParams.get('watch') ?? '').split(',')) docs.get(id)?.noteListener()
       return send(res, 200, { documents: [...docs.values()].map(docSummary) })
     }
     if (parts[1] === 'docs' && parts[2]) {

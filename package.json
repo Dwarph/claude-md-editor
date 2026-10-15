@@ -12,7 +12,8 @@
     "build": "vite build",
     "dev:web": "vite",
     "start": "node server/index.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "typecheck:mod": "tsc -p mod"
   },
   "dependencies": {
     "@milkdown/crepe": "^7.22.3",
@@ -28,6 +29,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "typescript": "^5.9.3",
     "vite": "^8.3.4",
     "vitest": "^5.0.4"
   }

@@ -21,7 +21,8 @@ disk edit, skip review, and fight their cursor. Use the tools below.
    - Elsewhere, give them the link, or pass `open_browser: true` to open their default browser.
 3. Run `reviewWatcher` as a **background** Bash command (`run_in_background: true`). It exits the
    moment they click **Submit review**, which wakes you up. Without it they have to tell you
-   "review's in" themselves; the editor shows whether you are listening.
+   "review's in" themselves; the editor shows whether you are listening. Skip this step if
+   you've been told the claude-md-editor mod is loaded: it tells you about reviews itself.
 
 ## Making changes
 

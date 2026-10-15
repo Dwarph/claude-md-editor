@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -194,6 +194,24 @@ describe('review comments', () => {
   it('will not submit an empty review', () => {
     const { session } = open('Text.\n')
     expect(() => ops.submitReview(session, '')).toThrow(/Nothing to submit/)
+  })
+
+  it("shows a polling mod as listening, and stops once it's gone quiet", () => {
+    vi.useFakeTimers()
+    try {
+      const { session } = open('Text.\n')
+      const watching = () => session.awareness.getLocalState()?.watching
+      session.noteListener()
+      expect(watching()).toBe(true)
+      vi.advanceTimersByTime(9_000)
+      session.noteListener()
+      vi.advanceTimersByTime(12_000)
+      expect(watching()).toBe(true)
+      vi.advanceTimersByTime(5_000)
+      expect(watching()).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

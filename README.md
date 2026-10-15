@@ -45,8 +45,9 @@ The `collab-md` skill takes it from there:
 - **Comments:** select text, then press **💬 Comment** (or Ctrl+Alt+M). Comments stay drafts
   until you press **Submit review**. Claude replies in the thread, or suggests a fix that
   resolves the comment when you accept it.
-- **Notify:** the top bar shows *Claude is listening* when Claude's review watcher is running.
-  Submitting then wakes Claude automatically. If it isn't listening, tell Claude "review's in".
+- **Notify:** the top bar shows *Claude is listening* when Claude's review watcher (or the
+  [mod](#claude-code-mod)) is running. Submitting then wakes Claude automatically. If it isn't
+  listening, tell Claude "review's in".
 - **Let Claude edit directly** skips suggestions for when you just want the changes made.
 
 ## How it works
@@ -71,6 +72,58 @@ cli.js wait-review ─────long-poll HTTP────────┘     
   by a file watcher and diffed in.
 - **Review notifications:** `node server/cli.js wait-review <file>` blocks until you submit a
   review, then exits. Claude runs it as a background command, so the exit wakes it.
+
+## Claude Code mod
+
+`mod/` is an optional Claude Code mod (function hooks) that makes the editor feel native inside a
+Claude Code session. It only talks to the daemon's HTTP API, so the plugin above is still what
+runs the editor.
+
+- **Review notifications without the watcher.** Every 3 seconds it checks the daemon. When you
+  submit a review on a doc this session is working on, it prompts Claude ("Review submitted on
+  draft.md: 2 comments. Use the collab-md skill…"), or slips the note into the running turn if
+  Claude is busy. Each review is announced once, and only to the session that opened the doc.
+  It also tells Claude to skip the background `wait-review` watcher.
+- **A *Shared docs* pane** listing open documents with their pending suggestions and comments,
+  an *Open editor* link, and **Accept all** / **Reject all**. It opens by itself the first time
+  this session opens a doc (on wide terminals). The editor itself stays in the browser.
+- **`/collab <file>`** opens a file (relative to the session's folder) and shows its URL.
+  `/collab` on its own opens the pane.
+- **A status line** such as `draft.md: 3 suggestions, 2 comments` while anything is pending.
+
+### Loading it
+
+Mods need a Claude Code build with function hooks (2.1.295 is known to work). Load it from your
+clone for one session:
+
+```bash
+claude --plugin-dir /path/to/claude-md-editor/mod
+```
+
+Where you can't pass a flag (the Claude desktop app, an SDK host), name the folder in
+`CLAUDE_CODE_PLUGIN_DIRS`, either in your environment or in the `env` block of
+`~/.claude/settings.json`:
+
+```json
+{ "env": { "CLAUDE_CODE_PLUGIN_DIRS": "/path/to/claude-md-editor/mod" } }
+```
+
+Separate several folders with your platform's path separator (`;` on Windows, `:` elsewhere).
+Load it alongside the main plugin: the mod notifies and draws, the plugin's MCP tools do the
+editing. `/collab <file>` can start the editor by itself when the mod sits inside this repo,
+because it falls back to `server/cli.js`.
+
+### Developing it
+
+```bash
+claude plugin validate mod   # what the module hooks and calls, and anything the engine would refuse
+npm run typecheck:mod        # tsc -p mod
+claude plugin test mod       # mod/tests/*.test.ts against the engine, with a fake daemon
+```
+
+Claude Code writes the API's type declarations to `mod/.claude-plugin/types/` each time it loads
+the mod (they're git-ignored), so run it once with `--plugin-dir` before type-checking a fresh
+clone.
 
 ## MCP tools
 
@@ -106,8 +159,7 @@ Set `CLAUDE_MD_EDITOR_PORT` and `CLAUDE_MD_EDITOR_HOME` to run an isolated copy 
   doesn't include them yet.
 - A suggestion whose text you've rewritten heavily can't be applied. Accepting it fails with a
   message, and you can ask Claude to suggest again.
-- The review watcher only notifies a Claude session that's open. A native Claude Code mod
-  (planned) could notify without it, and add a sidebar pane and status line.
+- Review notifications (watcher or mod) only reach a Claude session that's open.
 
 ## License
 

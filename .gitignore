@@ -21,3 +21,6 @@ Thumbs.db
 
 # Graft code-index cache
 graft/.cache/
+
+# Types Claude Code lays beside the mod each time it loads it (regenerated per build)
+mod/.claude-plugin/types/

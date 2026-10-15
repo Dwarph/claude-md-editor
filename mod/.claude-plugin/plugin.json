@@ -1,0 +1,8 @@
+{
+  "name": "md-editor-mod",
+  "version": "0.1.0",
+  "description": "Native Claude Code side of claude-md-editor: review notifications, a docs pane, /collab and a status line.",
+  "author": { "name": "Pip Turner" },
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}

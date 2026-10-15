@@ -16,6 +16,7 @@ const MESSAGE_SYNC = 0
 const MESSAGE_AWARENESS = 1
 const SAVE_DELAY_MS = 400
 const AGENT_STATUS_HOLD_MS = 4000
+const LISTENER_HOLD_MS = 10_000 // a poller checks every few seconds
 
 // Transaction origins for changes the server makes itself.
 export const ORIGIN = { load: 'load', file: 'file', agent: 'agent', user: 'user-api' }
@@ -160,6 +161,7 @@ export class DocSession {
   close() {
     if (this.saveTimer) this.save()
     this.watcher?.close()
+    clearTimeout(this.watchTimer)
     for (const ws of this.conns.keys()) ws.close()
     for (const waiter of this.reviewWaiters) waiter(null)
     this.awareness.destroy()
@@ -180,18 +182,30 @@ export class DocSession {
     }
   }
 
+  /** A poller (the Claude Code mod) announces reviews on this doc; it counts as listening for a while. */
+  noteListener() {
+    this.listenerUntil = Date.now() + LISTENER_HOLD_MS
+    this.updateWatching()
+  }
+
   /**
    * Tell editors whether an agent is waiting for a review (the wait-review
-   * watcher). Long-polls reconnect every ~25s, so "off" waits a few seconds.
+   * watcher, or the mod's poll). Long-polls reconnect every ~25s, so "off"
+   * waits a few seconds.
    */
   updateWatching() {
     const set = (watching) => {
       const state = this.awareness.getLocalState() ?? {}
       if (state.watching !== watching) this.awareness.setLocalState({ ...state, watching })
     }
+    const isListening = () => this.reviewWaiters.size > 0 || Date.now() < (this.listenerUntil ?? 0)
     clearTimeout(this.watchTimer)
-    if (this.reviewWaiters.size > 0) set(true)
-    else this.watchTimer = setTimeout(() => set(this.reviewWaiters.size > 0), 5000)
+    if (isListening()) {
+      set(true)
+      if (this.reviewWaiters.size === 0) this.watchTimer = setTimeout(() => this.updateWatching(), this.listenerUntil - Date.now())
+    } else {
+      this.watchTimer = setTimeout(() => set(isListening()), 5000)
+    }
   }
 
   /** The person's selection as their editor last reported it through awareness. */
