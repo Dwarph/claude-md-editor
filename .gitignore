@@ -1,7 +1,7 @@
 # Dependencies
 node_modules/
 
-# Editor sidecar state (pending suggestions, comments, Yjs history)
+# Legacy per-folder sidecar state (state now lives in ~/.claude-md-editor)
 .collab-md/
 
 # Throwaway experiments
@@ -18,3 +18,6 @@ npm-debug.log*
 Thumbs.db
 .vscode/
 .idea/
+
+# Graft code-index cache
+graft/.cache/

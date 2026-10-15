@@ -1,0 +1,14 @@
+{
+  "name": "claude-md-editor",
+  "owner": {
+    "name": "Pip Turner"
+  },
+  "description": "Shared WYSIWYG markdown editor for working on docs with Claude.",
+  "plugins": [
+    {
+      "name": "claude-md-editor",
+      "source": "./",
+      "description": "Shared WYSIWYG markdown editor with live agent suggestions and review comments."
+    }
+  ]
+}
