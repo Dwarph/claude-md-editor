@@ -36,7 +36,7 @@ try {
   if (command === 'wait-review' && file) {
     await waitReview(resolve(file))
   } else if (command === 'open' && file) {
-    console.log((await api('agent/open_document', { path: resolve(file) })).url)
+    console.log((await api('agent/open_document', { path: resolve(file), create: true })).url)
   } else if (command === 'status') {
     console.log(JSON.stringify(await api('agent/list_documents'), null, 2))
   } else if (command === 'stop') {

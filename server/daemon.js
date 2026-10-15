@@ -3,7 +3,7 @@
 // Binds to 127.0.0.1 only and exits after a stretch with nothing open.
 import { createServer } from 'node:http'
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { extname, isAbsolute, join, normalize } from 'node:path'
+import { dirname, extname, isAbsolute, join, normalize } from 'node:path'
 import { WebSocketServer } from 'ws'
 import { DocSession } from './doc.js'
 import * as ops from './ops.js'
@@ -33,10 +33,25 @@ function docOrThrow(id) {
   return session
 }
 
-function docForPath(path) {
+/**
+ * The open document for `path`, opening it if needed. A missing file is only
+ * created when the caller says so: in sandboxed hosts (e.g. Cowork) the agent's
+ * paths may not be this machine's, and a silent create would hide that.
+ */
+function docForPath(path, { create = false, content } = {}) {
   if (!path) throw new ops.OpError('`path` is required.')
   if (!isAbsolute(path)) throw new ops.OpError(`\`path\` must be absolute, got ${path}.`)
-  return docs.get(docIdFor(path)) ?? openDoc(path)
+  const open = docs.get(docIdFor(path))
+  if (open) return open
+  if (!existsSync(path)) {
+    if (!create) {
+      throw new ops.OpError(`No file at ${path} on the machine running the editor. Check it's the file's real location on the person's computer (sandboxed sessions can see files under a different path), or pass create: true to make a new document there.`)
+    }
+    // A new document's starting text is written as-is: it's the person's own text, not a suggestion.
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, content ?? '')
+  }
+  return openDoc(path)
 }
 
 const editorUrl = (session) => `http://127.0.0.1:${port}/doc/${session.id}`
@@ -59,8 +74,8 @@ function docSummary(session) {
 
 /** Agent calls: each marks the agent as working in open editors. */
 const agentRoutes = {
-  open_document: ({ path }) => {
-    const session = docForPath(path)
+  open_document: ({ path, create, content }) => {
+    const session = docForPath(path, { create, content })
     return { ...docSummary(session) }
   },
   read_document: ({ path }) => {

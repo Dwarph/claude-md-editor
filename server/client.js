@@ -3,7 +3,7 @@
 import { spawn } from 'node:child_process'
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { DAEMON_FILE, LOG_FILE, ROOT_DIR, STATE_DIR, VERSION } from './paths.js'
+import { DAEMON_FILE, ENTRY, LOG_FILE, STATE_DIR, VERSION } from './paths.js'
 
 const SPAWN_LOCK = join(STATE_DIR, 'spawn.lock')
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -35,7 +35,7 @@ async function runningDaemon() {
 function startDetached() {
   mkdirSync(STATE_DIR, { recursive: true })
   const log = openSync(LOG_FILE, 'a')
-  const child = spawn(process.execPath, [join(ROOT_DIR, 'server', 'daemon-main.js')], {
+  const child = spawn(process.execPath, [ENTRY.daemon], {
     detached: true,
     stdio: ['ignore', log, log],
     windowsHide: true,
@@ -43,7 +43,13 @@ function startDetached() {
   })
   child.unref()
   closeSync(log)
+  return child
 }
+
+// A freshly installed plugin's first start can take tens of seconds (cold disk,
+// antivirus scanning the bundled libraries); later starts take a second or two.
+const START_TIMEOUT_MS = 90_000
+const POLL_MS = 200
 
 let cachedPort = null
 
@@ -64,19 +70,24 @@ export async function ensureDaemon() {
       closeSync(openSync(SPAWN_LOCK, 'wx'))
       haveLock = true
     } catch {
-      // Someone else is starting it; clear a lock left by a crashed starter.
-      if (existsSync(SPAWN_LOCK) && Date.now() - statSync(SPAWN_LOCK).mtimeMs > 15_000) rmSync(SPAWN_LOCK, { force: true })
+      // Someone else is starting it: wait for theirs. Clear a lock left by a crashed starter.
+      if (existsSync(SPAWN_LOCK) && Date.now() - statSync(SPAWN_LOCK).mtimeMs > START_TIMEOUT_MS) rmSync(SPAWN_LOCK, { force: true })
     }
-    if (haveLock) startDetached()
+    let exited = null
+    if (haveLock) startDetached().once('exit', (code) => { exited = code })
     try {
-      for (let i = 0; i < 100 && !status; i++) {
-        await sleep(150)
+      const deadline = Date.now() + START_TIMEOUT_MS
+      while (!status && exited === null && Date.now() < deadline) {
+        await sleep(POLL_MS)
         status = await runningDaemon()
       }
     } finally {
       if (haveLock) rmSync(SPAWN_LOCK, { force: true })
     }
-    if (!status) throw new Error(`The editor server didn't start. See ${LOG_FILE}.`)
+    if (!status) {
+      const why = exited !== null ? `it exited (code ${exited})` : `it wasn't ready after ${START_TIMEOUT_MS / 1000}s`
+      throw new Error(`The editor server didn't start: ${why}. See ${LOG_FILE}.`)
+    }
   }
   cachedPort = status.port
   return status.port

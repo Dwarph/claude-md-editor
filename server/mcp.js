@@ -4,10 +4,10 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { spawn } from 'node:child_process'
 import { join, resolve } from 'node:path'
-import { api } from './client.js'
-import { ROOT_DIR, VERSION } from './paths.js'
+import { api, ensureDaemon } from './client.js'
+import { ENTRY, VERSION } from './paths.js'
 
-const CLI = join(ROOT_DIR, 'server', 'cli.js')
+const CLI = ENTRY.cli
 
 const server = new McpServer(
   { name: 'claude-md-editor', version: VERSION },
@@ -44,16 +44,22 @@ function openInSystemBrowser(url) {
 tool('open_document', {
   title: 'Open shared document',
   description:
-    'Open (or create) a markdown file in the shared editor and return its URL. Show the URL to the person, or open it for them ' +
-    '(in the Claude desktop app use the built-in browser; elsewhere pass open_browser). Then start the review watcher it returns as a background command.',
-  inputSchema: { path, open_browser: z.boolean().optional().describe("Also open the URL in the system's default browser.") },
-}, async ({ path: p, open_browser }) => {
-  const doc = await api('agent/open_document', { path: abs(p) })
+    'Open a markdown file in the shared editor and return its URL. Then show it to the person: open it in a browser pane you control, ' +
+    'or pass open_browser to open their default browser, and always give them the link. Then start the review watcher it returns ' +
+    'as a background command if you can run one.',
+  inputSchema: {
+    path,
+    open_browser: z.boolean().optional().describe("Also open the URL in the person's default browser (use when you have no browser pane of your own)."),
+    create: z.boolean().optional().describe('Create the file if it does not exist yet. Leave unset when opening an existing file, so a wrong path is reported.'),
+    content: z.string().optional().describe('Starting markdown for a file being created (e.g. text from the chat). Written as-is, not as a suggestion. Ignored if the file exists.'),
+  },
+}, async ({ path: p, open_browser, create, content }) => {
+  const doc = await api('agent/open_document', { path: abs(p), create, content })
   if (open_browser) openInSystemBrowser(doc.url)
   return {
     ...doc,
     reviewWatcher: `node "${CLI}" wait-review "${abs(p)}"`,
-    next: 'Run reviewWatcher with run_in_background so you are woken when the person submits review comments.',
+    next: 'If you can run background shell commands on this machine, run reviewWatcher in the background so you are woken when the person submits review comments. Otherwise tell them to say "review\'s in" after submitting.',
   }
 })
 
@@ -160,3 +166,7 @@ tool('list_documents', {
 }, async () => api('agent/list_documents'))
 
 await server.connect(new StdioServerTransport())
+
+// Start the editor server now, in the background: a fresh install's first start is slow, and this
+// way it's usually ready before the first tool call. Failures surface on that call instead.
+ensureDaemon().catch(() => {})

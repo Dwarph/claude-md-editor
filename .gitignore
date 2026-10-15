@@ -27,3 +27,7 @@ mod/.claude-plugin/types/
 
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
+
+# Packaged plugin (npm run package:plugin)
+build/
+dist-server/

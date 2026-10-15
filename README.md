@@ -14,22 +14,34 @@ everything runs on `127.0.0.1`.
 
 ## Install
 
-As a Claude Code plugin, from this repo:
+Requires Node 20+ on the machine.
+
+**Cowork (or Claude Code), from the packaged file:** build `build/claude-md-editor.plugin` with
+`npm run package:plugin` and add it to Cowork (drop it into a chat and accept it). The package
+holds the server as three bundled files, so it needs no install step or network access, and
+starts in about a second.
+
+**Claude Code, from this repo:**
 
 ```
 /plugin marketplace add Dwarph/claude-md-editor
 /plugin install claude-md-editor@claude-md-editor
 ```
 
-Or from a local clone, for development:
+Installed this way it runs from source, and installs its dependencies (`npm ci`) on first start.
+
+**From a local clone, for development:**
 
 ```bash
 npm install
 claude --plugin-dir /path/to/claude-md-editor
 ```
 
-Requires Node 20+. On first start, the plugin installs its own dependencies (`npm ci`) if
-they're missing, which can take a minute.
+**Where it works:** the editor opens in your browser and talks to a small server on your
+computer, so it works wherever Claude's tools run on your own machine. In the Claude Code
+desktop app it opens in the built-in browser; elsewhere, such as Cowork or a terminal, it opens
+your default browser. Where Claude can't run background commands (Cowork), it can't be woken
+when you submit a review, so tell it "review's in".
 
 ## Use
 
@@ -70,7 +82,7 @@ cli.js wait-review ─────long-poll HTTP────────┘     
 - **Suggestions and comments** are stored beside the document in Yjs maps, anchored with Yjs
   relative positions, so they follow the text while either side edits. They're never written
   into the markdown. Sidecar state lives in `~/.claude-md-editor/`, never next to your files.
-- **The server runs Milkdown headless** (`server/milkdown.js`, via jsdom), so it parses and
+- **The server runs Milkdown headless** (`server/milkdown.js`, on linkedom's lightweight DOM), so it parses and
   serializes markdown with exactly the browser's schema. Accepting a suggestion applies a
   ProseMirror transform and writes only the minimal Yjs diff.
 - **Edits made outside the editor** (in git, Claude's Edit tool or another editor) are picked up
@@ -152,6 +164,7 @@ npm install
 npm run build        # bundles the editor into web/dist (committed, so installs need no build)
 npm test             # vitest: round-trips, suggestions, anchors, reviews, persistence
 npm run dev:web      # Vite dev server for the UI, proxied to a running daemon
+npm run package:plugin   # build/claude-md-editor.plugin: editor plus bundled server, for Cowork
 node server/cli.js open some.md   # start the daemon and print a doc's URL
 node server/cli.js stop
 ```
