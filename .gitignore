@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Editor sidecar state (pending suggestions, comments, Yjs history)
+.collab-md/
+
+# Throwaway experiments
+spike/
+
+# Logs and local env
+*.log
+npm-debug.log*
+.env
+.env.*
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
