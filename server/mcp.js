@@ -93,7 +93,9 @@ tool('suggest_edit', {
     find: z.string().optional().describe('Exact text to replace, as it reads in the rendered document, within one paragraph/heading/list item.'),
     occurrence: z.number().int().min(1).optional().describe('Which match of `find` (1-based) if it appears more than once.'),
     block: z.number().int().min(0).optional().describe('Replace this whole block (number from read_document).'),
-    blocks: z.tuple([z.number().int().min(0), z.number().int().min(0)]).optional().describe('Replace blocks first..last inclusive.'),
+    // A plain two-item array, not z.tuple: tuples become array-form `items`, which some
+    // clients (Cowork) reject, dropping the whole tool.
+    blocks: z.array(z.number().int().min(0)).length(2).optional().describe('Replace blocks first..last inclusive, as [first, last].'),
     replace: z.string().describe('Replacement markdown. Inline only when using `find`.'),
     ...suggestionExtras,
   },
