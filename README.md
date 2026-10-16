@@ -26,7 +26,7 @@ In Claude Code:
 /plugin install md-editor@claude-md-editor
 ```
 
-Then just ask Claude something like *"let's work on docs/launch.md together in the editor"*. It'll open the editor (in the browser pane if you're in the Claude desktop app, otherwise your default browser) and start suggesting. On Cowork? Use [the packaged install](#cowork-or-claude-code-from-the-packaged-file) instead.
+Then just ask Claude something like *"let's work on docs/launch.md together in the editor"*. It'll open the editor (in the browser pane if you're in the Claude desktop app, otherwise your default browser) and start suggesting. On Cowork? Grab `md-editor.plugin` from the [latest release](https://github.com/Dwarph/claude-md-editor/releases/latest) and drop it into a chat ([details](#cowork-or-claude-code-from-the-packaged-file)).
 
 ## Install
 
@@ -37,23 +37,13 @@ Requires Node 20+ on the machine.
 The package holds the editor and the server as bundled files, so it needs no install step or
 network access, and starts in about a second.
 
-1. From a clone of this repo, build the package:
-
-   ```bash
-   npm install
-   npm run package:plugin
-   ```
-
-   This builds the editor, bundles the server and writes `build/md-editor.plugin`. The last line
-   it prints names the file and its version.
-2. Drop `build/md-editor.plugin` into a Cowork chat and accept it.
+1. Download `md-editor.plugin` from the [latest release](https://github.com/Dwarph/claude-md-editor/releases/latest).
+2. Drop it into a Cowork chat and accept it.
 3. Ask Claude to open a file in the editor (see [Use](#use)).
 
-**Updating:** raise `version` in `.claude-plugin/plugin.json` (and keep `package.json` in
-step), rebuild with `npm run package:plugin`, then add the new `build/md-editor.plugin` the same
-way. Always raise the version: the editor's background server keeps running between sessions,
-and a new install only replaces the old one when its version differs. Once it does, refresh any
-editor tabs you have open.
+**Updating:** download the newer `md-editor.plugin` from [Releases](https://github.com/Dwarph/claude-md-editor/releases) and add it the same way, then refresh any editor tabs you have open.
+
+**Building it yourself:** from a clone of this repo, run `npm install` then `npm run package:plugin`. This builds the editor, bundles the server and writes `build/md-editor.plugin`. If you've changed anything, raise `version` in `.claude-plugin/plugin.json` (and keep `package.json` in step) before rebuilding. The editor's background server keeps running between sessions, and a new install only replaces the old one when its version differs.
 
 ### Claude Code, from this repo
 
