@@ -1,6 +1,8 @@
 import { Crepe } from '@milkdown/crepe'
 import { editorViewCtx, parserCtx, remarkStringifyOptionsCtx, schemaCtx } from '@milkdown/kit/core'
 import { $prose } from '@milkdown/kit/utils'
+import { dropIndicatorPlugin as crepeDropIndicator } from '@milkdown/kit/plugin/cursor'
+import { wrapInHeadingInputRule } from '@milkdown/kit/preset/commonmark'
 import { Plugin, TextSelection } from '@milkdown/kit/prose/state'
 import * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
@@ -12,8 +14,12 @@ import { encodeAnchor } from '../shared/positions.js'
 import { bindingMapping, rangeOf, reviewPlugin } from './review-plugin.js'
 import { autosize, el, isCompact, layoutMargin, renderMargin } from './margin.js'
 import { TEXT_TYPE_ICON, TEXT_TYPE_KEY, textTypeMenu } from './block-type.js'
+import { dropIndicatorPlugin } from './drop-indicator.js'
 import { gutterDragPlugin } from './gutter-drag.js'
+import { headingLevelInputRule, keepHeadingOnBackspace } from './heading-hashes.js'
+import { gutterHoverPlugin } from './gutter-hover.js'
 import { handleSelectPlugin } from './handle-select.js'
+import { rangeDragPlugin } from './range-drag.js'
 
 const app = document.getElementById('app')
 const docId = /^\/doc\/([0-9a-f]{12})/.exec(location.pathname)?.[1]
@@ -187,15 +193,23 @@ async function openEditor(id) {
   })
   crepe.editor
     .config((ctx) => ctx.update(remarkStringifyOptionsCtx, (prev) => ({ ...prev, ...REMARK_STRINGIFY_OPTIONS })))
+    .config(keepHeadingOnBackspace)
+    .use(headingLevelInputRule)
     .use($prose(() => ySyncPlugin(fragment)))
     .use($prose(() => reviewPlugin(reviewCtx)))
     .use($prose(() => gutterDragPlugin()))
+    .use($prose((ctx) => gutterHoverPlugin(ctx)))
+    .use($prose((ctx) => dropIndicatorPlugin(ctx)))
     .use($prose(() => handleSelectPlugin()))
+    .use($prose(() => rangeDragPlugin()))
     // Selection changes (and focus) drive the Comment button and what Claude sees as "your selection".
     .use($prose(() => new Plugin({
       view: () => ({ update: (v, prev) => { if (!prev.selection.eq(v.state.selection)) { typeMenu.close(); hooks.selection() } } }),
       props: { handleDOMEvents: { focus: () => { hooks.selection(); return false }, blur: () => { setTimeout(hooks.selection, 150); return false } } },
     })))
+  // drop-indicator.js draws the drop line instead (Crepe's keeps its line's state and drawing).
+  await crepe.editor.remove(crepeDropIndicator)
+  await crepe.editor.remove(wrapInHeadingInputRule) // heading-hashes.js sets the level instead
   await crepe.create()
   crepe.editor.action((ctx) => {
     view = ctx.get(editorViewCtx)

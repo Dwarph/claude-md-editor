@@ -137,6 +137,9 @@ button { font: inherit; color: inherit; }
 }
 .page { min-width: 0; }
 .margin { position: relative; }
+/* Crepe glides the block handle between blocks over 0.2s, which trails the pointer. */
+.milkdown .milkdown-block-handle { transition: top 0.14s ease-out, left 0.14s ease-out, opacity 0.2s; }
+@media (prefers-reduced-motion: reduce) { .milkdown .milkdown-block-handle { transition: opacity 0.2s; } }
 
 /* Crepe theme, mapped onto our tokens */
 .milkdown {
