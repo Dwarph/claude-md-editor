@@ -1,16 +1,32 @@
 # claude-md-editor
 
-A shared markdown editor for writing with Claude. You edit the **rendered** document (not raw
-markdown) in your browser. Claude edits the same document live, and its changes show up as
-highlighted suggestions you accept or reject. Select any text to leave Claude a comment, then
-submit them together like a code review. Claude is woken up automatically when you do.
+**Write docs with Claude like you'd write them with a teammate.** You both work on the same rendered page, Claude's changes show up as suggestions you can accept or bin, and you can leave it comments it actually replies to. No more copy-pasting drafts back and forth from chat.
 
-The file on disk is always plain markdown holding the accepted text, so it works with git and
-every other tool.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/editor-dark.png">
+  <img alt="The editor: Claude's suggested rewrite shown as tracked changes with its reasoning in the margin, beside a draft comment waiting to be submitted" src="docs/images/editor-light.png">
+</picture>
 
-Built entirely on free, open-source parts: [Milkdown](https://milkdown.dev) (Crepe editor),
-[Yjs](https://yjs.dev), y-prosemirror and the MCP SDK. No accounts, API keys or hosted services:
-everything runs on `127.0.0.1`.
+## Why you'll like it
+
+- **It's a real doc, not a chat log.** You edit the rendered page (headings, lists, tables) rather than raw markdown, and Claude works on the same page at the same time.
+- **You're in charge.** Claude's changes come in as suggestions - struck through + tinted green, with a short note in the margin on *why*. Accept or reject them one by one, or all at once. Trust it? Flip it to edit live. Just want a second pair of eyes? Make it read only.
+- **Review it like a PR.** Select some text, leave a comment, then submit them all together. Claude gets woken up, replies in the thread and can suggest a fix that closes the comment when you accept it.
+- **It's just a markdown file.** What's on disk is always plain markdown with the accepted text, so commit it, diff it, open it anywhere. Suggestions + comments never end up in the file.
+- **Local + free.** No accounts, API keys or hosted services - everything runs on `127.0.0.1`. Built on open-source bits: [Milkdown](https://milkdown.dev), [Yjs](https://yjs.dev), y-prosemirror and the MCP SDK.
+
+![A comment thread: you ask for a recommendation, Claude replies and offers a suggested fix that turns the open question into a decision](docs/images/review-thread.png)
+
+## Try it out
+
+In Claude Code:
+
+```
+/plugin marketplace add Dwarph/claude-md-editor
+/plugin install md-editor@claude-md-editor
+```
+
+Then just ask Claude something like *"let's work on docs/launch.md together in the editor"*. It'll open the editor (in the browser pane if you're in the Claude desktop app, otherwise your default browser) and start suggesting. On Cowork? Use [the packaged install](#cowork-or-claude-code-from-the-packaged-file) instead.
 
 ## Install
 
@@ -170,19 +186,19 @@ clone.
 
 ## MCP tools
 
-| Tool | What it does |
-| --- | --- |
-| `open_document` | Open or create a file and return the editor URL and the watcher command |
-| `read_document` | Markdown with `[[block N]]` markers, plus pending suggestions and comments |
-| `get_selection` | What you've selected in the editor |
-| `suggest_edit` | Replace found text (inline) or whole blocks |
-| `suggest_insert` | Insert new blocks before or after a block |
-| `list_suggestions` / `withdraw_suggestion` | Manage pending suggestions |
-| `list_changes` | Your edits since Claude last read the doc (diff), plus accept/reject events |
-| `get_review` | Submitted comments, with quotes and context |
-| `wait_for_review` | Wait up to 50s for a review and return it; for clients without background commands |
-| `reply_to_comment` / `resolve_comment` | Answer or close a comment |
-| `list_documents` | Everything open in the editor |
+| Tool                                       | What it does                                                                       |
+| :----------------------------------------- | :--------------------------------------------------------------------------------- |
+| `open_document`                            | Open or create a file and return the editor URL and the watcher command            |
+| `read_document`                            | Markdown with `[[block N]]` markers, plus pending suggestions and comments         |
+| `get_selection`                            | What you've selected in the editor                                                 |
+| `suggest_edit`                             | Replace found text (inline) or whole blocks                                        |
+| `suggest_insert`                           | Insert new blocks before or after a block                                          |
+| `list_suggestions` / `withdraw_suggestion` | Manage pending suggestions                                                         |
+| `list_changes`                             | Your edits since Claude last read the doc (diff), plus accept/reject events        |
+| `get_review`                               | Submitted comments, with quotes and context                                        |
+| `wait_for_review`                          | Wait up to 50s for a review and return it; for clients without background commands |
+| `reply_to_comment` / `resolve_comment`     | Answer or close a comment                                                          |
+| `list_documents`                           | Everything open in the editor                                                      |
 
 ## Develop
 
