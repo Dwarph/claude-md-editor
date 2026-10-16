@@ -4,7 +4,7 @@
 // one, the top of the next) for the same spot, and it draws none where the
 // block started. Here each spot gets one line, midway between its neighbours,
 // and dropping a block where it started leaves it there.
-import { NodeSelection, Plugin, TextSelection } from '@milkdown/kit/prose/state'
+import { Plugin, Selection } from '@milkdown/kit/prose/state'
 import { dropIndicatorState } from '@milkdown/kit/plugin/cursor'
 
 const rectOf = (view, pos) => {
@@ -112,14 +112,10 @@ export function dropIndicatorPlugin(ctx) {
         if (isNode) tr.replaceRangeWith(pos, pos, slice.content.firstChild)
         else tr.replaceRange(pos, pos, slice)
         if (tr.doc.eq(before)) return true
-        const $pos = tr.doc.resolve(pos)
-        if (isNode && NodeSelection.isSelectable(slice.content.firstChild) && $pos.nodeAfter?.sameMarkup(slice.content.firstChild)) {
-          tr.setSelection(new NodeSelection($pos))
-        } else {
-          let end = tr.mapping.map(spot.pos)
-          tr.mapping.maps[tr.mapping.maps.length - 1].forEach((_from, _to, _newFrom, newTo) => { end = newTo })
-          tr.setSelection(TextSelection.between($pos, tr.doc.resolve(end)))
-        }
+        // The cursor lands at the end of what was dropped, with nothing left selected.
+        let end = tr.mapping.map(spot.pos)
+        tr.mapping.maps[tr.mapping.maps.length - 1].forEach((_from, _to, _newFrom, newTo) => { end = newTo })
+        tr.setSelection(Selection.near(tr.doc.resolve(end), -1))
         view.focus()
         view.dispatch(tr.setMeta('uiEvent', 'drop'))
         return true

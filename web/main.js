@@ -20,6 +20,7 @@ import { headingLevelInputRule, keepHeadingOnBackspace } from './heading-hashes.
 import { gutterHoverPlugin } from './gutter-hover.js'
 import { handleSelectPlugin } from './handle-select.js'
 import { rangeDragPlugin } from './range-drag.js'
+import { selectionReleasePlugin } from './selection-release.js'
 
 const app = document.getElementById('app')
 const docId = /^\/doc\/([0-9a-f]{12})/.exec(location.pathname)?.[1]
@@ -202,6 +203,7 @@ async function openEditor(id) {
     .use($prose((ctx) => dropIndicatorPlugin(ctx)))
     .use($prose(() => handleSelectPlugin()))
     .use($prose(() => rangeDragPlugin()))
+    .use($prose(() => selectionReleasePlugin()))
     // Selection changes (and focus) drive the Comment button and what Claude sees as "your selection".
     .use($prose(() => new Plugin({
       view: () => ({ update: (v, prev) => { if (!prev.selection.eq(v.state.selection)) { typeMenu.close(); hooks.selection() } } }),
